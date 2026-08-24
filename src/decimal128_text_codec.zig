@@ -720,19 +720,28 @@ fn nanString(out: []u8, sign: bool, is_signaling: bool, payload_hi: u64, payload
     return total_len;
 }
 
-const ZEROS = [_][]const u8{
-    "0",  "0.0",  "0.00",  "0.000",  "0.0000",  "0.00000",  "0.000000",  "",
-    "-0", "-0.0", "-0.00", "-0.000", "-0.0000", "-0.00000", "-0.000000", "",
-};
+/// Every plain-form zero is a prefix of this literal. `k = -q_exp` is the count
+/// of zeros after the radix point, so `k = 0` renders `"0"` with no radix point
+/// at all and `k >= 1` renders `"0."` followed by `k` zeros -- lengths 1 and
+/// `k + 2`.
+///
+/// The sign is not in the data. It is written into `out[0]` unconditionally and
+/// overwritten by the `0` when the value is positive, the same trick the finite
+/// renderers use. That works because the negative spelling of every form here is
+/// the positive spelling with one byte in front; a form that ever put the sign
+/// anywhere else would render wrong rather than fail to compile.
+const PLAIN_ZERO = "0.000000";
 
 fn zerString(out: []u8, sign: bool, q_exp: i32) usize {
     if (q_exp <= 0 and q_exp >= -6) {
-        const sign_bit_set: i32 = @intFromBool(sign);
-        const index: usize = @intCast((-q_exp + (sign_bit_set << 3)) & 0x0F);
-        const s = ZEROS[index];
-        demand(s.len <= max_len, "the plain zero fits the buffer");
-        @memcpy(out[0..s.len], s);
-        return s.len;
+        const k: usize = @intCast(-q_exp);
+        const zero_len: usize = if (k == 0) 1 else k + 2;
+        const sign_len: usize = @intFromBool(sign);
+        const total_len = sign_len + zero_len;
+        demand(total_len <= max_len, "the plain zero fits the buffer");
+        out[0] = '-'; // overwritten by the '0' when unsigned
+        @memcpy(out[sign_len..total_len], PLAIN_ZERO[0..zero_len]);
+        return total_len;
     }
     const base: []const u8 = if (q_exp > 0)
         (if (sign) "-0E+" else "0E+")
