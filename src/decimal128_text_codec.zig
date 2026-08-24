@@ -1169,7 +1169,7 @@ fn roundAndFinalizeFinite(format_is_bid: bool, sign: bool, q_exp_in: i32, dw1_in
     // never once executed -- and therefore has never been verified to work -- it
     // is removed and the invariant is enforced.
     //
-    // Measured in the C port: zero occurrences across the 86,126-row corpus and
+    // Measured in the C port: zero occurrences across the 87k-row corpus and
     // 400,000 random numerals, and across 76,280 finalizer calls driven by
     // inputs of up to 5,000 digits, where the widest coefficient ever seen was
     // 34.
