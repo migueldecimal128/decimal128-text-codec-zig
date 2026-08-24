@@ -15,7 +15,7 @@ reference implementation for the family. One file, no dependencies, no allocator
 const codec = @import("decimal128_text_codec");
 
 // bits -> text
-var buf: [codec.max]u8 = undefined;
+var buf: [codec.max_len]u8 = undefined;
 const s = codec.bid128ToString(&buf, bits);   // []const u8 into buf
 const d = codec.dpd128ToString(&buf, bits);
 
@@ -35,11 +35,13 @@ and the returned slice lives exactly as long as the buffer does. A caller who
 needs the text to outlive the buffer copies it — `try allocator.dupe(u8, s)` —
 which puts the allocation decision where the caller can see it.
 
-The buffer parameter is `*[max]u8` rather than `[]u8`, so its size is part of the
+The buffer parameter is `*[max_len]u8` rather than `[]u8`, so its size is part
+of the
 type: an undersized buffer is a compile error, not a runtime one, and rendering
 keeps its cannot-fail property with no error union.
 
-`max` is **42**, which is exactly the longest output, not a bound with headroom.
+`max_len` is **42**, which is exactly the longest output, not a bound with
+headroom.
 Two forms tie for it: scientific `-9.999…E-6143` (1 sign + 1 digit + 1 point + 33
 digits + `E` + sign + 4 exponent digits) and plain `-0.000000999…` (1 sign + 1 + 6
 zeros + 1 point + 34 digits). The six leading zeros are pinned by the GDAS rule

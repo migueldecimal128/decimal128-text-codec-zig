@@ -177,7 +177,7 @@ test "canonical table decodes and re-encodes" {
 /// Every row: both encodings must render to the expected text, and therefore to
 /// each other.
 fn runDecodeTable(rows: []const CorpusRow, label: []const u8) !void {
-    var buf: [codec.max]u8 = undefined;
+    var buf: [codec.max_len]u8 = undefined;
     for (rows) |row| {
         const bid_text = codec.bid128ToString(&buf, row.bid);
         if (!std.mem.eql(u8, bid_text, row.text)) {

@@ -40,7 +40,7 @@
 //  - The renderers write into the CALLER's buffer and return a slice of it, as
 //    the C port does. Zig has no owned string type and no ambient allocator, so
 //    this is the only spelling that keeps rendering allocation-free and
-//    infallible. The buffer parameter is `*[max]u8` rather than `[]u8`: the
+//    infallible. The buffer parameter is `*[max_len]u8` rather than `[]u8`: the
 //    length is part of the type, so an undersized buffer is a compile error
 //    rather than a runtime error, and the function needs no error union.
 //
@@ -64,7 +64,8 @@
 //    is the intended arithmetic. Every other site is left checked on purpose,
 //    so a translation error surfaces as a panic rather than a wrong answer.
 //
-// Everything reachable from outside is the four functions, `max`, `qnan` and
+// Everything reachable from outside is the four functions, `max_len`, `qnan`
+// and
 // `ParseError`; the rest is file-private.
 
 const std = @import("std");
@@ -84,7 +85,7 @@ const build_options = @import("build_options");
 //                      CI runs the whole corpus with it on.
 //
 //   demand(cond, msg)  claims that must survive into a shipping build: the
-//                      buffer-sizing guards, which are what make `max` a
+//                      buffer-sizing guards, which are what make `max_len` a
 //                      checked bound rather than a comment, and the
 //                      coefficient-width invariant standing in for the removed
 //                      precision-truncation step.
@@ -155,7 +156,7 @@ const TEN_POW_18: u64 = 1_000_000_000_000_000_000;
 /// and those stay live in release builds. Sizing it exactly rather than
 /// generously is what turns that guard into a real check: with slack, an error
 /// in the arithmetic above would quietly consume the slack instead of firing.
-pub const max: usize = 42;
+pub const max_len: usize = 42;
 
 // --------------------------------------------------------------------------
 // The 128-bit boundary
@@ -690,7 +691,7 @@ fn appendInt(out: []u8, v: i32) usize {
 
 fn infString(out: []u8, sign: bool) usize {
     const s: []const u8 = if (sign) "-Infinity" else "Infinity";
-    demand(s.len <= max, "Infinity fits the buffer");
+    demand(s.len <= max_len, "Infinity fits the buffer");
     @memcpy(out[0..s.len], s);
     return s.len;
 }
@@ -707,13 +708,13 @@ fn nanString(out: []u8, sign: bool, is_signaling: bool, payload_hi: u64, payload
         payload_hi > MAX_PAYLOAD_HI or
         (payload_hi == MAX_PAYLOAD_HI and payload_lo > MAX_PAYLOAD_LO))
     {
-        demand(base_len <= max, "the bare NaN fits the buffer");
+        demand(base_len <= max_len, "the bare NaN fits the buffer");
         @memcpy(out[0..base_len], base);
         return base_len;
     }
     const digit_len = calcDigitLen128(payload_hi, payload_lo);
     const total_len = base_len + digit_len;
-    demand(total_len <= max, "the NaN payload fits the buffer");
+    demand(total_len <= max_len, "the NaN payload fits the buffer");
     @memcpy(out[0..base_len], base);
     u128ToAscii(digit_len, payload_hi, payload_lo, out, base_len);
     return total_len;
@@ -729,7 +730,7 @@ fn zerString(out: []u8, sign: bool, q_exp: i32) usize {
         const sign_bit_set: i32 = @intFromBool(sign);
         const index: usize = @intCast((-q_exp + (sign_bit_set << 3)) & 0x0F);
         const s = ZEROS[index];
-        demand(s.len <= max, "the plain zero fits the buffer");
+        demand(s.len <= max_len, "the plain zero fits the buffer");
         @memcpy(out[0..s.len], s);
         return s.len;
     }
@@ -739,7 +740,7 @@ fn zerString(out: []u8, sign: bool, q_exp: i32) usize {
         // q_exp is negative and prints its own sign
         (if (sign) "-0E" else "0E");
     const base_len = base.len;
-    demand(base_len + 6 <= max, "the exponent-form zero fits the buffer");
+    demand(base_len + 6 <= max_len, "the exponent-form zero fits the buffer");
     @memcpy(out[0..base_len], base);
     return base_len + appendInt(out[base_len..], q_exp);
 }
@@ -749,7 +750,7 @@ fn fnzToIntegerString(out: []u8, sign: bool, digit_len: usize, dw1: u64, dw0: u6
     verify(digit_len > 0, "a finite nonzero value has at least one digit");
     const sign_len: usize = @intFromBool(sign);
     const total_len = sign_len + digit_len;
-    demand(total_len <= max, "the integer form fits the buffer");
+    demand(total_len <= max_len, "the integer form fits the buffer");
     out[0] = '-'; // overwritten by the first digit when unsigned
     u128ToAscii(digit_len, dw1, dw0, out, sign_len);
     return total_len;
@@ -764,7 +765,7 @@ fn fnzToDecimalPointString(out: []u8, sign: bool, q_exp: i32, digit_len: usize, 
     const sign_len: usize = @intFromBool(sign);
     const decimal_point_len: usize = 1;
     const total_len = sign_len + leading_zero_count + decimal_point_len + digit_len;
-    demand(total_len <= max, "the fixed-point form fits the buffer");
+    demand(total_len <= max_len, "the fixed-point form fits the buffer");
     out[0] = '-';
     var i = sign_len;
     while (i <= leading_zero_count) : (i += 1) { // one extra, overwritten below
@@ -799,7 +800,7 @@ fn fnzToNormalizedScientificString(out: []u8, sign: bool, q_exp: i32, digit_len:
     else
         1;
     const total_len = sign_len + decimal_point_len + digit_len + exp_e_len + exp_sign_len + exp_digit_len;
-    demand(total_len <= max, "the scientific form fits the buffer");
+    demand(total_len <= max_len, "the scientific form fits the buffer");
     out[0] = '-';
     u128ToAscii(digit_len, dw1, dw0, out, sign_len + decimal_point_len);
     if (decimal_point_len > 0) {
@@ -1535,7 +1536,8 @@ pub const qnan: u128 = @as(u128, QNAN_PATTERN_HI) << 64;
 ///
 /// Writes into the caller's buffer and returns the slice of it that was
 /// written. Nothing is allocated, and the slice is valid for as long as `out`
-/// is. The buffer is `*[max]u8` rather than `[]u8` so that its size is checked
+/// is. The buffer is `*[max_len]u8` rather than `[]u8` so that its size is
+/// checked
 /// at compile time; there is no runtime failure mode and no error union.
 ///
 /// This cannot fail. Every 128-bit pattern renders: canonical encodings produce
@@ -1546,7 +1548,7 @@ pub const qnan: u128 = @as(u128, QNAN_PATTERN_HI) << 64;
 /// information -- "1.00" and "1.0" are distinct outputs from distinct encodings
 /// of the same numerical value -- and always writes the exponent sign, as in
 /// "6.02E+23".
-pub fn bid128ToString(out: *[max]u8, bits: u128) []const u8 {
+pub fn bid128ToString(out: *[max_len]u8, bits: u128) []const u8 {
     const n = decodeBid128toString(out, hiWord(bits), loWord(bits));
     return out[0..n];
 }
@@ -1558,7 +1560,7 @@ pub fn bid128ToString(out: *[max]u8, bits: u128) []const u8 {
 /// storing that coefficient as a leading digit plus eleven 10-bit declets rather
 /// than as a binary integer. Peer encodings of the same value render to
 /// identical text. This cannot fail.
-pub fn dpd128ToString(out: *[max]u8, bits: u128) []const u8 {
+pub fn dpd128ToString(out: *[max_len]u8, bits: u128) []const u8 {
     const n = decodeDpd128toString(out, hiWord(bits), loWord(bits));
     return out[0..n];
 }
