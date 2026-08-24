@@ -9,14 +9,14 @@
 //! context, no status flags.
 //!
 //! This module provides no arithmetic, no comparison and no field extraction.
-//! For the full IEEE 754-2019 decimal128 implementation see `decimal128-zig` at
+//! For the full IEEE 754-2019 decimal128 implementation see
 //! https://decimal128.com.
 //!
 //! Rounding, where the text → bits direction requires it, is the IEEE 754-2019
 //! `roundTiesToEven` attribute and is not configurable. Output form is the GDAS
 //! `to-scientific-string` form and is not configurable.
 //!
-//! All four functions are pure and safe for concurrent use. Nothing here
+//! All functions are pure and safe for concurrent use. Nothing here
 //! allocates: the renderers write into a buffer the caller owns, so the module
 //! never sees an allocator.
 
@@ -145,10 +145,12 @@ const TEN_POW_18: u64 = 1_000_000_000_000_000_000;
 ///
 ///   scientific  `-9.999…E-6143`      1 sign + 1 digit + 1 point + 33 digits
 ///                                    + 1 `E` + 1 sign + 4 exponent digits
-///   plain       `-0.000000999…`      1 sign + 1 + 6 zeros + 1 point + 34 digits
+///   plain       `-0.00000999…`       1 sign + 1 zero + 1 point + 5 zeros
+///                                    + 34 digits
 ///
-/// The plain form's six leading zeros are pinned by the GDAS rule that selects
-/// it only when the adjusted exponent is at least -6, and the exponent field
+/// The plain form's five leading zeros are pinned by the GDAS rule that selects
+/// it only when the adjusted exponent is at least -6, which puts five zeros
+/// between the radix point and the first significant digit. The exponent field
 /// cannot exceed four digits inside decimal128's range, so neither number can
 /// drift without the format itself changing.
 ///
@@ -848,7 +850,7 @@ fn fnzToNormalizedScientificString(out: []u8, sign: bool, q_exp: i32, digit_len:
 }
 
 /// Finite non-zero: pick the form. Integer when the quantum exponent is zero,
-/// fixed-point when the value sits within six leading zeros of unity, scientific
+/// fixed-point when the adjusted exponent is at least -6, scientific
 /// otherwise -- the GDAS auto-select rule.
 fn fnzString(out: []u8, sign: bool, q_exp: i32, dw1: u64, dw0: u64) usize {
     const digit_len = calcDigitLen128(dw1, dw0);
