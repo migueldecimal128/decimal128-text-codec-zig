@@ -689,19 +689,34 @@ fn appendInt(out: []u8, v: i32) usize {
 // (sign, qExp, coefficient) and hand it here.
 // --------------------------------------------------------------------------
 
+/// None of the optional leading characters live in the string data. The sign,
+/// and the `s` that marks a signaling NaN, are each written unconditionally and
+/// then overwritten by whatever follows when they are not wanted -- the trick
+/// `fnzToIntegerString` already uses for the sign. That holds only because every
+/// optional character is a single byte at the front of the form: a spelling that
+/// ever put one elsewhere would render wrong rather than fail to compile. The
+/// one exception is written where it happens, in `zerString`'s exponent form,
+/// where the byte is a TRAILING `+` overwritten by `appendInt`'s own `-`.
+const INFINITY_TEXT = "Infinity";
+
 fn infString(out: []u8, sign: bool) usize {
-    const s: []const u8 = if (sign) "-Infinity" else "Infinity";
-    demand(s.len <= max_len, "Infinity fits the buffer");
-    @memcpy(out[0..s.len], s);
-    return s.len;
+    const sign_len: usize = @intFromBool(sign);
+    const total_len = sign_len + INFINITY_TEXT.len;
+    demand(total_len <= max_len, "Infinity fits the buffer");
+    out[0] = '-'; // overwritten by the 'I' when unsigned
+    @memcpy(out[sign_len..total_len], INFINITY_TEXT);
+    return total_len;
 }
 
+const NAN_TEXT = "NaN";
+
 fn nanString(out: []u8, sign: bool, is_signaling: bool, payload_hi: u64, payload_lo: u64) usize {
-    const base: []const u8 = if (!is_signaling)
-        (if (sign) "-NaN" else "NaN")
-    else
-        (if (sign) "-sNaN" else "sNaN");
-    const base_len = base.len;
+    const sign_len: usize = @intFromBool(sign);
+    const s_len: usize = @intFromBool(is_signaling);
+    const word_off = sign_len + s_len;
+    const base_len = word_off + NAN_TEXT.len;
+    out[0] = '-'; // overwritten by the 's' or the 'N' when unsigned
+    out[sign_len] = 's'; // overwritten by the 'N' when quiet
 
     if ((payload_hi | payload_lo) == 0 or
         // non-canonical payload, IEEE 754-2019 3.5.2 c) 2) -- read as zero
@@ -709,13 +724,13 @@ fn nanString(out: []u8, sign: bool, is_signaling: bool, payload_hi: u64, payload
         (payload_hi == MAX_PAYLOAD_HI and payload_lo > MAX_PAYLOAD_LO))
     {
         demand(base_len <= max_len, "the bare NaN fits the buffer");
-        @memcpy(out[0..base_len], base);
+        @memcpy(out[word_off..base_len], NAN_TEXT);
         return base_len;
     }
     const digit_len = calcDigitLen128(payload_hi, payload_lo);
     const total_len = base_len + digit_len;
     demand(total_len <= max_len, "the NaN payload fits the buffer");
-    @memcpy(out[0..base_len], base);
+    @memcpy(out[word_off..base_len], NAN_TEXT);
     u128ToAscii(digit_len, payload_hi, payload_lo, out, base_len);
     return total_len;
 }
@@ -732,6 +747,9 @@ fn nanString(out: []u8, sign: bool, is_signaling: bool, payload_hi: u64, payload
 /// anywhere else would render wrong rather than fail to compile.
 const PLAIN_ZERO = "0.000000";
 
+/// The exponent form's base. The `+` is not here: see `zerString` below.
+const ZERO_EXP_TEXT = "0E";
+
 fn zerString(out: []u8, sign: bool, q_exp: i32) usize {
     if (q_exp <= 0 and q_exp >= -6) {
         const k: usize = @intCast(-q_exp);
@@ -743,14 +761,20 @@ fn zerString(out: []u8, sign: bool, q_exp: i32) usize {
         @memcpy(out[sign_len..total_len], PLAIN_ZERO[0..zero_len]);
         return total_len;
     }
-    const base: []const u8 = if (q_exp > 0)
-        (if (sign) "-0E+" else "0E+")
-    else
-        // q_exp is negative and prints its own sign
-        (if (sign) "-0E" else "0E");
-    const base_len = base.len;
+    const sign_len: usize = @intFromBool(sign);
+    // A positive exponent needs an explicit '+'; a negative one prints its own
+    // '-' from appendInt. Write the '+' unconditionally and let appendInt land
+    // on top of it when q_exp < 0 -- the same discipline as the leading sign,
+    // pointed the other way. It is correct only because appendInt emits a '-'
+    // for a negative value and emits nothing for a positive one, and because the
+    // plain form above has already taken every q_exp in [-6, 0], so this branch
+    // never sees zero.
+    const plus_len: usize = @intFromBool(q_exp > 0);
+    const base_len = sign_len + ZERO_EXP_TEXT.len + plus_len;
     demand(base_len + 6 <= max_len, "the exponent-form zero fits the buffer");
-    @memcpy(out[0..base_len], base);
+    out[0] = '-'; // overwritten by the '0' when unsigned
+    @memcpy(out[sign_len .. sign_len + ZERO_EXP_TEXT.len], ZERO_EXP_TEXT);
+    out[sign_len + ZERO_EXP_TEXT.len] = '+'; // overwritten by appendInt's '-' when q_exp < 0
     return base_len + appendInt(out[base_len..], q_exp);
 }
 
