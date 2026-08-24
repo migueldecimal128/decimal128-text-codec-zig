@@ -1,0 +1,3 @@
+[submodule "resources"]
+	path = resources
+	url = https://github.com/migueldecimal128/decimal128-resources.git

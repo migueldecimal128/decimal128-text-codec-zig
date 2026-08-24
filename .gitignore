@@ -1,0 +1,6 @@
+.DS_Store
+*~
+.idea/
+.vscode/
+/zig-out/
+/.zig-cache/

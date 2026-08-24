@@ -1,0 +1,57 @@
+name: ci
+
+# The codec is one file with no dependencies, so CI exists to cover what a
+# developer's host does not: the other operating systems, the build with the
+# internal assertions armed -- the only configuration in which a verify() can
+# fail at all -- and the optimizer settings, which in Zig change what arithmetic
+# is checked. Debug and ReleaseSafe trap on overflow; ReleaseFast and
+# ReleaseSmall do not, so running the corpus through all four is what says the
+# wrapping sites are spelled +% / *% exactly where they should be.
+#
+# The conformance vectors come from decimal128-resources, mounted as a submodule
+# at <repo>/resources, so every checkout needs `submodules: recursive` -- without
+# it the tests fail loudly naming the fix rather than silently skipping the
+# corpus. The full 84,783-row canonical table comes with it and runs everywhere.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: zig on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Format check
+        if: matrix.os == 'ubuntu-latest'
+        run: zig fmt --check build.zig src tests
+
+      - name: Test (Debug)
+        run: zig build test
+
+      - name: Test (Debug, assertions armed)
+        run: zig build test -Dverify
+
+      - name: Test (ReleaseSafe)
+        run: zig build test -Doptimize=ReleaseSafe
+
+      - name: Test (ReleaseSafe, assertions armed)
+        run: zig build test -Doptimize=ReleaseSafe -Dverify
+
+      - name: Test (ReleaseFast)
+        run: zig build test -Doptimize=ReleaseFast
+
+      - name: Test (ReleaseSmall)
+        run: zig build test -Doptimize=ReleaseSmall
