@@ -65,54 +65,8 @@
 //! `[max_len]u8` and return a slice of it; the parsers return the encoding, or
 //! a member of `ParseError`. The module never sees an allocator.
 
-// decimal128-text-codec-zig
-//
-// Ported from decimal128-text-codec-c (decimal128_text_codec.c @ 3d78a7f) for
-// structure, with decimal128-text-codec-swift for the boundary and
-// decimal128-text-codec-rust for the questions a language with native 128-bit
-// integers and no garbage collector has to answer. All descend from
-// decimal128-text-codec-kotlin, which is the reference implementation for the
-// family. The shape follows them closely enough to be read side by side; where
-// Zig differs, the difference is noted at the point it occurs. The five
-// deliberate ones:
-//
-//  - The public boundary is `u128`, as in Swift, C# and Rust, not the
-//    reference's pair of words. The internals still work in `dw1`/`dw0` `u64`
-//    pairs exactly as the reference does: the split happens once on entry, the
-//    join once on exit. That is what keeps the eight files readable against
-//    each other.
-//
-//  - The renderers write into the CALLER's buffer and return a slice of it, as
-//    the C port does. Zig has no owned string type and no ambient allocator, so
-//    this is the only spelling that keeps rendering allocation-free and
-//    infallible. The buffer parameter is `*[max_len]u8` rather than `[]u8`: the
-//    length is part of the type, so an undersized buffer is a compile error
-//    rather than a runtime error, and the function needs no error union.
-//
-//  - Parse reports failure as a Zig error set. The family's contract is that
-//    the encoding is ALWAYS written -- the canonical positive quiet NaN on
-//    failure -- so a caller who ignores the error still holds a legal
-//    IEEE 754-2019 datum. An error union enforces that statically instead: the
-//    value cannot be read without handling the error. `qnan` is exported for a
-//    caller who wants the sibling behaviour explicitly.
-//
-//  - The widening multiply is `u128` arithmetic. The reference decomposes it
-//    into four 32x32 partial products because the JVM has no unsigned 64-bit
-//    multiply-high; the C port carries a three-way __int128 / __umulh /
-//    synthesize-from-limbs split plus a second build to exercise the fallback.
-//    Neither has an analogue here.
-//
-//  - Zig's `+` and `*` are checked -- a panic in Debug and ReleaseSafe -- so
-//    every site the reference relies on wrapping is spelled `+%` / `*%`, the
-//    same sites Rust spells `wrapping_add` / `wrapping_mul`. Each carries a
-//    note saying why the wrap is the intended arithmetic. Every other site is
-//    left checked on purpose, so a translation error surfaces as a panic rather
-//    than a wrong answer. The Swift port took the other road and spells every
-//    operator `&+` / `&*`.
-//
 // Everything reachable from outside is the four functions, `max_len`, `qnan`
-// and
-// `ParseError`; the rest is file-private.
+// and `ParseError`; the rest is file-private.
 
 const std = @import("std");
 const build_options = @import("build_options");
