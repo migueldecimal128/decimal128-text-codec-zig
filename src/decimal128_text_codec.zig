@@ -1156,6 +1156,7 @@ fn finalizeSubnormal(format_is_bid: bool, sign: bool, q_exp_in: i32, dw1_in: u64
 /// Dispatch the three underflow cases: swamped to zero, the exact boundary, and
 /// the subnormal region.
 fn finalizeUnderflowRegion(format_is_bid: bool, sign: bool, q_exp: i32, dw1: u64, dw0: u64, residue: i32) struct { u64, u64 } {
+    // IEEE 754-2019 7.5 Underflow -- the subnormal region
     verify(q_exp < Q_MIN, "the exponent is below the minimum");
     const truncation_needed: usize = @intCast(Q_MIN - q_exp);
     const digit_len = calcDigitLen128(dw1, dw0);
