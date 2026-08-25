@@ -179,12 +179,12 @@ test "canonical table decodes and re-encodes" {
 fn runDecodeTable(rows: []const CorpusRow, label: []const u8) !void {
     var buf: [codec.max_len]u8 = undefined;
     for (rows) |row| {
-        const bid_text = codec.bid128ToString(&buf, row.bid);
+        const bid_text = codec.bid128ToAscii(&buf, row.bid);
         if (!std.mem.eql(u8, bid_text, row.text)) {
             std.debug.print("{s} line {d}: bid #{X:0>32} rendered <{s}>, expected <{s}>\n", .{ label, row.line_number, row.bid, bid_text, row.text });
             return error.TestFailed;
         }
-        const dpd_text = codec.dpd128ToString(&buf, row.dpd);
+        const dpd_text = codec.dpd128ToAscii(&buf, row.dpd);
         if (!std.mem.eql(u8, dpd_text, row.text)) {
             std.debug.print("{s} line {d}: dpd #{X:0>32} rendered <{s}>, expected <{s}>\n", .{ label, row.line_number, row.dpd, dpd_text, row.text });
             return error.TestFailed;

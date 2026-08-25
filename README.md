@@ -16,8 +16,8 @@ const codec = @import("decimal128_text_codec");
 
 // bits -> text
 var buf: [codec.max_len]u8 = undefined;
-const s = codec.bid128ToString(&buf, bits);   // []const u8 into buf
-const d = codec.dpd128ToString(&buf, bits);
+const s = codec.bid128ToAscii(&buf, bits);   // []const u8 into buf
+const d = codec.dpd128ToAscii(&buf, bits);
 
 // text -> bits
 const bits = try codec.bid128Parse("1.23E+45");

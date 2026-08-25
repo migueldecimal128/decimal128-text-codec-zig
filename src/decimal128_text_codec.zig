@@ -694,14 +694,14 @@ fn appendInt(out: []u8, v: i32) usize {
 /// None of the optional leading characters live in the string data. The sign,
 /// and the `s` that marks a signaling NaN, are each written unconditionally and
 /// then overwritten by whatever follows when they are not wanted -- the trick
-/// `fnzToIntegerString` already uses for the sign. That holds only because every
+/// `fnzToIntegerAscii` already uses for the sign. That holds only because every
 /// optional character is a single byte at the front of the form: a spelling that
 /// ever put one elsewhere would render wrong rather than fail to compile. The
-/// one exception is written where it happens, in `zerString`'s exponent form,
+/// one exception is written where it happens, in `zerAscii`'s exponent form,
 /// where the byte is a TRAILING `+` overwritten by `appendInt`'s own `-`.
 const INFINITY_TEXT = "Infinity";
 
-fn infString(out: []u8, sign: bool) usize {
+fn infAscii(out: []u8, sign: bool) usize {
     const sign_len: usize = @intFromBool(sign);
     const total_len = sign_len + INFINITY_TEXT.len;
     demand(total_len <= max_len, "Infinity fits the buffer");
@@ -712,7 +712,7 @@ fn infString(out: []u8, sign: bool) usize {
 
 const NAN_TEXT = "NaN";
 
-fn nanString(out: []u8, sign: bool, is_signaling: bool, payload_hi: u64, payload_lo: u64) usize {
+fn nanAscii(out: []u8, sign: bool, is_signaling: bool, payload_hi: u64, payload_lo: u64) usize {
     const sign_len: usize = @intFromBool(sign);
     const s_len: usize = @intFromBool(is_signaling);
     const word_off = sign_len + s_len;
@@ -749,10 +749,10 @@ fn nanString(out: []u8, sign: bool, is_signaling: bool, payload_hi: u64, payload
 /// anywhere else would render wrong rather than fail to compile.
 const PLAIN_ZERO = "0.000000";
 
-/// The exponent form's base. The `+` is not here: see `zerString` below.
+/// The exponent form's base. The `+` is not here: see `zerAscii` below.
 const ZERO_EXP_TEXT = "0E";
 
-fn zerString(out: []u8, sign: bool, q_exp: i32) usize {
+fn zerAscii(out: []u8, sign: bool, q_exp: i32) usize {
     if (q_exp <= 0 and q_exp >= -6) {
         const k: usize = @intCast(-q_exp);
         const zero_len: usize = if (k == 0) 1 else k + 2;
@@ -781,7 +781,7 @@ fn zerString(out: []u8, sign: bool, q_exp: i32) usize {
 }
 
 /// qExp == 0: a plain integer, no radix point and no exponent.
-fn fnzToIntegerString(out: []u8, sign: bool, digit_len: usize, dw1: u64, dw0: u64) usize {
+fn fnzToIntegerAscii(out: []u8, sign: bool, digit_len: usize, dw1: u64, dw0: u64) usize {
     verify(digit_len > 0, "a finite nonzero value has at least one digit");
     const sign_len: usize = @intFromBool(sign);
     const total_len = sign_len + digit_len;
@@ -793,7 +793,7 @@ fn fnzToIntegerString(out: []u8, sign: bool, digit_len: usize, dw1: u64, dw0: u6
 
 /// Fixed-point form: leading zeros, then the coefficient digits shifted right by
 /// one position to make room for the radix point.
-fn fnzToDecimalPointString(out: []u8, sign: bool, q_exp: i32, digit_len: usize, dw1: u64, dw0: u64) usize {
+fn fnzToDecimalPointAscii(out: []u8, sign: bool, q_exp: i32, digit_len: usize, dw1: u64, dw0: u64) usize {
     const digits_right_of_decimal: usize = @intCast(-q_exp);
     const leading_zero_signed = 1 + @as(i32, @intCast(digits_right_of_decimal)) - @as(i32, @intCast(digit_len));
     const leading_zero_count: usize = if (leading_zero_signed < 0) 0 else @intCast(leading_zero_signed);
@@ -817,7 +817,7 @@ fn fnzToDecimalPointString(out: []u8, sign: bool, q_exp: i32, digit_len: usize, 
 
 /// Normalized scientific form. The exponent sign is always written, per the GDAS
 /// to-scientific-string form: 1.234E+5, never 1.234E5.
-fn fnzToNormalizedScientificString(out: []u8, sign: bool, q_exp: i32, digit_len: usize, dw1: u64, dw0: u64) usize {
+fn fnzToNormalizedScientificAscii(out: []u8, sign: bool, q_exp: i32, digit_len: usize, dw1: u64, dw0: u64) usize {
     verify(digit_len > 0, "a finite nonzero value has at least one digit");
     const e_exp = q_exp + (@as(i32, @intCast(digit_len)) - 1);
     const e_exp_abs: u32 = @abs(e_exp);
@@ -852,12 +852,12 @@ fn fnzToNormalizedScientificString(out: []u8, sign: bool, q_exp: i32, digit_len:
 /// Finite non-zero: pick the form. Integer when the quantum exponent is zero,
 /// fixed-point when the adjusted exponent is at least -6, scientific
 /// otherwise -- the GDAS auto-select rule.
-fn fnzString(out: []u8, sign: bool, q_exp: i32, dw1: u64, dw0: u64) usize {
+fn fnzAscii(out: []u8, sign: bool, q_exp: i32, dw1: u64, dw0: u64) usize {
     const digit_len = calcDigitLen128(dw1, dw0);
     const e_exp = q_exp + (@as(i32, @intCast(digit_len)) - 1);
-    if (q_exp == 0) return fnzToIntegerString(out, sign, digit_len, dw1, dw0);
-    if (q_exp <= 0 and e_exp >= -6) return fnzToDecimalPointString(out, sign, q_exp, digit_len, dw1, dw0);
-    return fnzToNormalizedScientificString(out, sign, q_exp, digit_len, dw1, dw0);
+    if (q_exp == 0) return fnzToIntegerAscii(out, sign, digit_len, dw1, dw0);
+    if (q_exp <= 0 and e_exp >= -6) return fnzToDecimalPointAscii(out, sign, q_exp, digit_len, dw1, dw0);
+    return fnzToNormalizedScientificAscii(out, sign, q_exp, digit_len, dw1, dw0);
 }
 
 // --------------------------------------------------------------------------
@@ -865,7 +865,7 @@ fn fnzString(out: []u8, sign: bool, q_exp: i32, dw1: u64, dw0: u64) usize {
 // --------------------------------------------------------------------------
 
 /// Unpack a BID128 encoding, per IEEE 754-2019 3.5.2, and render it.
-fn decodeBid128toString(out: []u8, bid128_hi: u64, bid128_lo: u64) usize {
+fn decodeBid128toAscii(out: []u8, bid128_hi: u64, bid128_lo: u64) usize {
     verify(1 + W5 + T_WIDTH == 128, "the field widths tile the encoding");
 
     const sign = (bid128_hi & SIGN_BIT) != 0;
@@ -888,11 +888,11 @@ fn decodeBid128toString(out: []u8, bid128_hi: u64, bid128_lo: u64) usize {
         q_exp = biased_exponent_e - BIAS;
         coeff_hi = 8 + @as(u64, combination & 1);
     } else if ((combination >> @intCast(W5 - 5)) == 0x1E) {
-        return infString(out, sign);
+        return infAscii(out, sign);
     } else {
         verify((combination >> @intCast(W5 - 5)) == 0x1F, "the remaining combination field is the NaN pattern");
         const is_signaling = ((combination >> @intCast(W5 - 6)) & 1) != 0;
-        return nanString(out, sign, is_signaling, coeff_t_hi, bid128_lo);
+        return nanAscii(out, sign, is_signaling, coeff_t_hi, bid128_lo);
     }
 
     const dw1 = (coeff_hi << @intCast(T_WIDTH - 64)) | coeff_t_hi;
@@ -904,13 +904,13 @@ fn decodeBid128toString(out: []u8, bid128_hi: u64, bid128_lo: u64) usize {
         dw1 > MAXX_COEFF_34_HI or
         (dw1 == MAXX_COEFF_34_HI and dw0 >= MAXX_COEFF_34_LO))
     {
-        return zerString(out, sign, q_exp);
+        return zerAscii(out, sign, q_exp);
     }
-    return fnzString(out, sign, q_exp, dw1, dw0);
+    return fnzAscii(out, sign, q_exp, dw1, dw0);
 }
 
 /// Unpack a DPD128 encoding and hand the pieces to the same renderers.
-fn decodeDpd128toString(out: []u8, dpd128_hi: u64, dpd128_lo: u64) usize {
+fn decodeDpd128toAscii(out: []u8, dpd128_hi: u64, dpd128_lo: u64) usize {
     const w: u32 = 12; // exponent continuation width
 
     const sign = (dpd128_hi & SIGN_BIT) != 0;
@@ -934,7 +934,7 @@ fn decodeDpd128toString(out: []u8, dpd128_hi: u64, dpd128_lo: u64) usize {
         q_exp = ((exp_msb << @intCast(w)) | exp_continuation) - BIAS;
         d0 = 8 + @as(u64, (combination >> @intCast(w)) & 0x1);
     } else if ((combination >> @intCast(W5 - 5)) == 0x1E) {
-        return infString(out, sign);
+        return infAscii(out, sign);
     } else {
         verify((combination >> @intCast(W5 - 5)) == 0x1F, "the remaining combination field is the NaN pattern");
         is_nan = true;
@@ -964,9 +964,9 @@ fn decodeDpd128toString(out: []u8, dpd128_hi: u64, dpd128_lo: u64) usize {
         dw0 = sum_lo;
     }
 
-    if (is_nan) return nanString(out, sign, is_signaling, dw1, dw0);
-    if ((dw1 | dw0) == 0) return zerString(out, sign, q_exp);
-    return fnzString(out, sign, q_exp, dw1, dw0);
+    if (is_nan) return nanAscii(out, sign, is_signaling, dw1, dw0);
+    if ((dw1 | dw0) == 0) return zerAscii(out, sign, q_exp);
+    return fnzAscii(out, sign, q_exp, dw1, dw0);
 }
 
 // --------------------------------------------------------------------------
@@ -1583,20 +1583,20 @@ pub const qnan: u128 = @as(u128, QNAN_PATTERN_HI) << 64;
 /// information -- "1.00" and "1.0" are distinct outputs from distinct encodings
 /// of the same numerical value -- and always writes the exponent sign, as in
 /// "6.02E+23".
-pub fn bid128ToString(out: *[max_len]u8, bits: u128) []const u8 {
-    const n = decodeBid128toString(out, hiWord(bits), loWord(bits));
+pub fn bid128ToAscii(out: *[max_len]u8, bits: u128) []const u8 {
+    const n = decodeBid128toAscii(out, hiWord(bits), loWord(bits));
     return out[0..n];
 }
 
 /// Render a DPD128 encoding as a decimal character sequence.
 ///
-/// The peer of `bid128ToString`: DPD128 carries the same sign, the same 14-bit
+/// The peer of `bid128ToAscii`: DPD128 carries the same sign, the same 14-bit
 /// biased exponent and the same 34-digit coefficient, and differs only in
 /// storing that coefficient as a leading digit plus eleven 10-bit declets rather
 /// than as a binary integer. Peer encodings of the same value render to
 /// identical text. This cannot fail.
-pub fn dpd128ToString(out: *[max_len]u8, bits: u128) []const u8 {
-    const n = decodeDpd128toString(out, hiWord(bits), loWord(bits));
+pub fn dpd128ToAscii(out: *[max_len]u8, bits: u128) []const u8 {
+    const n = decodeDpd128toAscii(out, hiWord(bits), loWord(bits));
     return out[0..n];
 }
 
