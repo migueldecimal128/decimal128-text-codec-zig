@@ -543,8 +543,6 @@ const M_U64_DIV_1E4: u64 = 0x346D_C5D6_3886_594B;
 const S_U64_DIV_1E4: u6 = 11;
 const MASK32: u64 = 0xFFFF_FFFF;
 
-const MAGIC_DIV_1E8: u64 = M_U64_DIV_1E8;
-
 inline fn asciiDigit(d: u64) u8 {
     return '0' + @as(u8, @intCast(d));
 }
@@ -634,13 +632,13 @@ fn u128ToAscii(digit_print_count: usize, dw1: u64, dw0: u64, ascii: []u8, off: u
     var ich = off + digit_print_count;
     var remaining_digit_count = digit_print_count;
     while (dw1_t != 0) {
-        const q2 = mulhi64(dw1_t, MAGIC_DIV_1E8) >> S_U64_DIV_1E8;
+        const q2 = mulhi64(dw1_t, M_U64_DIV_1E8) >> S_U64_DIV_1E8;
         const r2 = dw1_t - (q2 * 100_000_000);
         const s2 = (r2 << 32) | (dw0_t >> 32);
-        const q1 = mulhi64(s2, MAGIC_DIV_1E8) >> S_U64_DIV_1E8;
+        const q1 = mulhi64(s2, M_U64_DIV_1E8) >> S_U64_DIV_1E8;
         const r1 = s2 - (q1 * 100_000_000);
         const s1 = (r1 << 32) | (dw0_t & MASK32);
-        const q0 = mulhi64(s1, MAGIC_DIV_1E8) >> S_U64_DIV_1E8;
+        const q0 = mulhi64(s1, M_U64_DIV_1E8) >> S_U64_DIV_1E8;
         const r0 = s1 - (q0 * 100_000_000);
         dw0_t = (q1 << 32) + q0;
         dw1_t = q2;
@@ -649,7 +647,7 @@ fn u128ToAscii(digit_print_count: usize, dw1: u64, dw0: u64, ascii: []u8, off: u
         remaining_digit_count -= 8;
     }
     while (remaining_digit_count >= 8) {
-        const t0 = mulhi64(dw0_t, MAGIC_DIV_1E8) >> S_U64_DIV_1E8;
+        const t0 = mulhi64(dw0_t, M_U64_DIV_1E8) >> S_U64_DIV_1E8;
         const r0 = dw0_t - (t0 * 100_000_000);
         dw0_t = t0;
         render8DigitsBeforeIndex(r0, ascii, ich);
