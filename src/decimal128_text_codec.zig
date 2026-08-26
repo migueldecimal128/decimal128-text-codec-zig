@@ -1424,7 +1424,7 @@ fn parseInfinityText(out: *Words, sign: bool, ch_first: i32, bytes: []const u8, 
     for ("infinity") |target_code| {
         if ((ch | 0x20) != target_code) {
             if (ch == -1) break;
-            return "failure parsing infinity";
+            return "failure parsing Infinity";
         }
         ch_prev_code = ch | 0x20;
         ch = codeAt(bytes, pos);
