@@ -62,11 +62,12 @@
 //! ## This implementation
 //!
 //! Nothing here allocates. The renderers write into a caller-owned
-//! `[max_len]u8` and return a slice of it; the parsers return the encoding, or
-//! a member of `ParseError`. The module never sees an allocator.
+//! `[max_len]u8` and return a slice of it; the parsers write the encoding
+//! through an out-parameter and return `null`, or a human-readable message on
+//! failure. The module never sees an allocator.
 
-// Everything reachable from outside is the four functions, `max_len`, `qnan`
-// and `ParseError`; the rest is file-private.
+// Everything reachable from outside is the four functions, `max_len` and
+// `qnan`; the rest is file-private.
 
 const std = @import("std");
 const build_options = @import("build_options");
@@ -180,6 +181,10 @@ inline fn loWord(bits: u128) u64 {
 inline fn joinWords(hi: u64, lo: u64) u128 {
     return (@as(u128, hi) << 64) | @as(u128, lo);
 }
+
+/// The `dw1` / `dw0` word pair as one value, so that a parser can return a
+/// failure message and still deliver an encoding through an out-parameter.
+const Words = struct { hi: u64, lo: u64 };
 
 // --------------------------------------------------------------------------
 // Low-level unsigned arithmetic
@@ -1261,43 +1266,11 @@ fn roundAndFinalizeFinite(format_is_bid: bool, sign: bool, q_exp_in: i32, dw1_in
 // text -> bits
 // --------------------------------------------------------------------------
 
-/// Why a decimal character sequence could not be parsed.
-///
-/// Zig error sets carry an identifier rather than a message, so these are the
-/// failure messages as names. The mapping:
-///
-///   EmptyString                   "empty string"
-///   InvalidFormat                 "invalid format"
-///   UnexpectedChar                "unexpected char"
-///   DoubleRadixDot                "double radix dot"
-///   NoCoefficientDigit            "no coefficient digit"
-///   NoExponentDigit               "no exponent digit"
-///   InvalidUnderscoreLocation     "invalid underscore location"
-///   FailureParsingInfinityLetter  "failure parsing infinity"
-///   FailureParsingInfinity        "failure parsing Infinity"
-///   FailureParsingNaN             "failure parsing NaN"
-///   NonDigitNaNPayloadCharacter   "non-digit NaN payload character"
-///
-/// The two Infinity messages differ only in case, which is not a distinction
-/// an identifier can carry: the first reports a character that is not part of
-/// the word, the second a word that ended too early.
-///
-/// The names are not part of the contract and may change between versions. What
-/// is contractual is that the two formats reject the same inputs with the same
-/// error.
-pub const ParseError = error{
-    EmptyString,
-    InvalidFormat,
-    UnexpectedChar,
-    DoubleRadixDot,
-    NoCoefficientDigit,
-    NoExponentDigit,
-    InvalidUnderscoreLocation,
-    FailureParsingInfinityLetter,
-    FailureParsingInfinity,
-    FailureParsingNaN,
-    NonDigitNaNPayloadCharacter,
-};
+// The parsers report failure as a human-readable message and success as
+// `null`. The exact wording is not part of the contract and may change between
+// versions. What is contractual is that the two formats reject the same inputs
+// with the same message, which is what lets the corpus assert one error column
+// against both.
 
 /// The code of the byte at `index`, or -1 past the end of the slice.
 ///
@@ -1331,7 +1304,7 @@ inline fn isDigit(ch: i32) bool {
 /// Leading zeros can be flushed branchlessly by coercing a comparison to an
 /// integer; the two counters below say the same thing with an `if`, since Zig
 /// has no implicit bool-to-integer conversion.
-fn parseFiniteValueText(format_is_bid: bool, sign: bool, ch_first: i32, bytes: []const u8, start_pos: usize) ParseError!struct { u64, u64 } {
+fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, bytes: []const u8, start_pos: usize) ?[]const u8 {
     var pos = start_pos;
     var residue = EXACT;
 
@@ -1370,20 +1343,20 @@ fn parseFiniteValueText(format_is_bid: bool, sign: bool, ch_first: i32, bytes: [
             prev_was_digit = true;
             after_underscore = false;
         } else if (ch == '_') {
-            if (!prev_was_digit) return ParseError.InvalidUnderscoreLocation;
+            if (!prev_was_digit) return "invalid underscore location";
             prev_was_digit = false;
             after_underscore = true;
         } else { // '.'
-            if (after_underscore) return ParseError.InvalidUnderscoreLocation;
-            if (has_dot) return ParseError.DoubleRadixDot;
+            if (after_underscore) return "invalid underscore location";
+            if (has_dot) return "double radix dot";
             has_dot = true;
             prev_was_digit = false;
         }
         ch = codeAt(bytes, pos);
         pos += 1;
     }
-    if (after_underscore) return ParseError.InvalidUnderscoreLocation;
-    if (!has_coefficient_digit) return ParseError.NoCoefficientDigit;
+    if (after_underscore) return "invalid underscore location";
+    if (!has_coefficient_digit) return "no coefficient digit";
     // this path has at least one digit
     if (ch == 'E' or ch == 'e') {
         ch = codeAt(bytes, pos);
@@ -1399,7 +1372,7 @@ fn parseFiniteValueText(format_is_bid: bool, sign: bool, ch_first: i32, bytes: [
         after_underscore = false;
         while (isDigit(ch) or ch == '_') {
             if (ch == '_') {
-                if (!prev_was_digit) return ParseError.InvalidUnderscoreLocation;
+                if (!prev_was_digit) return "invalid underscore location";
                 prev_was_digit = false;
                 after_underscore = true;
             } else {
@@ -1418,12 +1391,12 @@ fn parseFiniteValueText(format_is_bid: bool, sign: bool, ch_first: i32, bytes: [
             ch = codeAt(bytes, pos);
             pos += 1;
         }
-        if (after_underscore) return ParseError.InvalidUnderscoreLocation;
-        if (!has_exp_digit) return ParseError.NoExponentDigit;
+        if (after_underscore) return "invalid underscore location";
+        if (!has_exp_digit) return "no exponent digit";
         // clamp once after the loop
         if (exp_significant_digit_count > 4) exp = 9999;
     }
-    if (ch != -1) return ParseError.UnexpectedChar;
+    if (ch != -1) return "unexpected char";
 
     var dw0 = accum19a;
     var dw1: u64 = 0;
@@ -1438,28 +1411,31 @@ fn parseFiniteValueText(format_is_bid: bool, sign: bool, ch_first: i32, bytes: [
     const signed_exp = if (exp_sign) -exp else exp;
     const excess_digits = significant_digit_count -| 34;
     const q_exp = signed_exp - @as(i32, @intCast(fractional_digit_count)) + @as(i32, @intCast(excess_digits));
-    return roundAndFinalizeFinite(format_is_bid, sign, q_exp, dw1, dw0, residue);
+    const hi, const lo = roundAndFinalizeFinite(format_is_bid, sign, q_exp, dw1, dw0, residue);
+    out.* = .{ .hi = hi, .lo = lo };
+    return null;
 }
 
 /// Parse Infinity, or its three-letter abbreviation Inf, case-insensitively.
-fn parseInfinityText(sign: bool, ch_first: i32, bytes: []const u8, start_pos: usize) ParseError!struct { u64, u64 } {
+fn parseInfinityText(out: *Words, sign: bool, ch_first: i32, bytes: []const u8, start_pos: usize) ?[]const u8 {
     var pos = start_pos;
     var ch = ch_first;
     var ch_prev_code: i32 = 0;
     for ("infinity") |target_code| {
         if ((ch | 0x20) != target_code) {
             if (ch == -1) break;
-            return ParseError.FailureParsingInfinityLetter;
+            return "failure parsing infinity";
         }
         ch_prev_code = ch | 0x20;
         ch = codeAt(bytes, pos);
         pos += 1;
     }
     if (ch != -1 or (ch_prev_code != 'f' and ch_prev_code != 'y')) {
-        return ParseError.FailureParsingInfinity;
+        return "failure parsing Infinity";
     }
     const s: u64 = if (sign) SIGN_BIT else 0;
-    return .{ INF_PATTERN_HI | s, 0 };
+    out.* = .{ .hi = INF_PATTERN_HI | s, .lo = 0 };
+    return null;
 }
 
 /// Parse NaN, qNaN or sNaN, case-insensitively, with an optional payload of
@@ -1477,7 +1453,7 @@ fn parseInfinityText(sign: bool, ch_first: i32, bytes: []const u8, start_pos: us
 /// itself. The resemblance stops at the parentheses: strtod's sequence is
 /// letters, digits and underscores read as an implementation-defined integer,
 /// while a decimal128 payload is decimal digits.
-fn parseNanText(format_is_bid: bool, sign: bool, ch_first: i32, bytes: []const u8, start_pos: usize) ParseError!struct { u64, u64 } {
+fn parseNanText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, bytes: []const u8, start_pos: usize) ?[]const u8 {
     var pos = start_pos;
     var ch = ch_first;
     const has_s = (ch | 0x20) == 's';
@@ -1487,7 +1463,7 @@ fn parseNanText(format_is_bid: bool, sign: bool, ch_first: i32, bytes: []const u
         pos += 1;
     }
     if (((ch | 0x20) != 'n') or ((codeAt(bytes, pos) | 0x20) != 'a') or ((codeAt(bytes, pos + 1) | 0x20) != 'n')) {
-        return ParseError.FailureParsingNaN;
+        return "failure parsing NaN";
     }
     pos += 2;
 
@@ -1524,16 +1500,16 @@ fn parseNanText(format_is_bid: bool, sign: bool, ch_first: i32, bytes: []const u
             pos += 1;
         }
         if (accum_digit_count == 0) {
-            return if (has_paren) ParseError.FailureParsingNaN else ParseError.NonDigitNaNPayloadCharacter;
+            return if (has_paren) "failure parsing NaN" else "non-digit NaN payload character";
         }
         if (has_paren) {
             // the ')' must be present and must end the input
             if (ch != ')') {
-                return if (ch == -1) ParseError.FailureParsingNaN else ParseError.NonDigitNaNPayloadCharacter;
+                return if (ch == -1) "failure parsing NaN" else "non-digit NaN payload character";
             }
-            if (codeAt(bytes, pos) != -1) return ParseError.FailureParsingNaN;
+            if (codeAt(bytes, pos) != -1) return "failure parsing NaN";
         } else if (ch != -1) {
-            return ParseError.NonDigitNaNPayloadCharacter;
+            return "non-digit NaN payload character";
         }
         if (accum_digit_count > 33) {
             payload_dw0 = 0;
@@ -1546,11 +1522,13 @@ fn parseNanText(format_is_bid: bool, sign: bool, ch_first: i32, bytes: []const u
             }
         }
     }
-    return setNaN(format_is_bid, sign, has_s, payload_dw1, payload_dw0);
+    const hi, const lo = setNaN(format_is_bid, sign, has_s, payload_dw1, payload_dw0);
+    out.* = .{ .hi = hi, .lo = lo };
+    return null;
 }
 
 /// Read the optional sign, then dispatch on the leading character.
-fn encodeStringOrError(format_is_bid: bool, bytes: []const u8) ParseError!struct { u64, u64 } {
+fn encodeStringOrError(out: *Words, format_is_bid: bool, bytes: []const u8) ?[]const u8 {
     var pos: usize = 0;
     const ch_first = codeAt(bytes, pos);
     pos += 1;
@@ -1561,15 +1539,15 @@ fn encodeStringOrError(format_is_bid: bool, bytes: []const u8) ParseError!struct
         pos += 1;
     }
     if (isDigit(ch) or ch == '.') {
-        return parseFiniteValueText(format_is_bid, sign, ch, bytes, pos);
+        return parseFiniteValueText(out, format_is_bid, sign, ch, bytes, pos);
     }
     const ch_lower = ch | 0x20;
-    if (ch_lower == 'i') return parseInfinityText(sign, ch, bytes, pos);
+    if (ch_lower == 'i') return parseInfinityText(out, sign, ch, bytes, pos);
     if (ch_lower == 'n' or ch_lower == 's' or ch_lower == 'q') {
-        return parseNanText(format_is_bid, sign, ch, bytes, pos);
+        return parseNanText(out, format_is_bid, sign, ch, bytes, pos);
     }
-    if (ch_first == -1) return ParseError.EmptyString;
-    return ParseError.InvalidFormat;
+    if (ch_first == -1) return "empty string";
+    return "invalid format";
 }
 
 // --------------------------------------------------------------------------
@@ -1578,11 +1556,11 @@ fn encodeStringOrError(format_is_bid: bool, bytes: []const u8) ParseError!struct
 
 /// The canonical positive quiet NaN.
 ///
-/// An out-parameter API would write this on a failed parse, so that a caller
-/// who ignores the failure still holds a legal IEEE 754-2019 datum. Here the
-/// error union makes that impossible to need -- but the constant is what a
-/// caller wanting the same behaviour reaches for:
-/// `bid128Parse(text) catch qnan`. It is the same bit pattern in both formats.
+/// The parsers write this through their out-parameter on a failed parse, so
+/// that a caller who ignores the returned message still holds a legal
+/// IEEE 754-2019 datum rather than a stale one. It is exported so that a
+/// caller can name the same bit pattern, and the corpus can assert against it.
+/// It is the same pattern in both formats.
 pub const qnan: u128 = @as(u128, QNAN_PATTERN_HI) << 64;
 
 /// Render a BID128 encoding into a caller-supplied buffer, allocating nothing.
@@ -1653,11 +1631,11 @@ pub fn dpd128ToAscii(out: *[max_len]u8, bits: u128) []const u8 {
 
 /// Parse a decimal character sequence into a BID128 encoding.
 ///
-/// Returns the encoding on success, or a member of `ParseError` on failure.
-/// An out-parameter API would write the canonical positive quiet NaN in that
-/// case, so a caller who ignores the failure still holds a legal IEEE 754-2019
-/// datum; here the error union makes that unnecessary, and `qnan` is available
-/// for a caller who wants the same behaviour explicitly.
+/// Returns `null` on success, with the encoding written to `out`. On failure
+/// returns a human-readable message and writes the canonical positive quiet
+/// NaN, so a caller who ignores the return value still holds a legal
+/// IEEE 754-2019 datum rather than a stale one. The exact wording of the
+/// message is not part of the contract and may change between versions.
 ///
 /// Accepted input:
 ///
@@ -1690,18 +1668,21 @@ pub fn dpd128ToAscii(out: *[max_len]u8, bits: u128) []const u8 {
 /// declets. The same text parses to peer encodings of the same value in either
 /// format, and the canonical positive quiet NaN is the same bit pattern in
 /// both.
-pub fn bid128Parse(text: []const u8) ParseError!u128 {
-    const hi, const lo = try encodeStringOrError(true, text);
-    return joinWords(hi, lo);
+pub fn bid128Parse(out: *u128, text: []const u8) ?[]const u8 {
+    var words: Words = .{ .hi = 0, .lo = 0 };
+    const error_text = encodeStringOrError(&words, true, text);
+    if (error_text != null) words = .{ .hi = QNAN_PATTERN_HI, .lo = 0 };
+    out.* = joinWords(words.hi, words.lo);
+    return error_text;
 }
 
 /// Parse a decimal character sequence into a DPD128 encoding.
 ///
-/// Returns the encoding on success, or a member of `ParseError` on failure.
-/// An out-parameter API would write the canonical positive quiet NaN in that
-/// case, so a caller who ignores the failure still holds a legal IEEE 754-2019
-/// datum; here the error union makes that unnecessary, and `qnan` is available
-/// for a caller who wants the same behaviour explicitly.
+/// Returns `null` on success, with the encoding written to `out`. On failure
+/// returns a human-readable message and writes the canonical positive quiet
+/// NaN, so a caller who ignores the return value still holds a legal
+/// IEEE 754-2019 datum rather than a stale one. The exact wording of the
+/// message is not part of the contract and may change between versions.
 ///
 /// Accepted input:
 ///
@@ -1734,7 +1715,10 @@ pub fn bid128Parse(text: []const u8) ParseError!u128 {
 /// declets. The same text parses to peer encodings of the same value in either
 /// format, and the canonical positive quiet NaN is the same bit pattern in
 /// both.
-pub fn dpd128Parse(text: []const u8) ParseError!u128 {
-    const hi, const lo = try encodeStringOrError(false, text);
-    return joinWords(hi, lo);
+pub fn dpd128Parse(out: *u128, text: []const u8) ?[]const u8 {
+    var words: Words = .{ .hi = 0, .lo = 0 };
+    const error_text = encodeStringOrError(&words, false, text);
+    if (error_text != null) words = .{ .hi = QNAN_PATTERN_HI, .lo = 0 };
+    out.* = joinWords(words.hi, words.lo);
+    return error_text;
 }

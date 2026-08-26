@@ -65,18 +65,20 @@ test "parse vectors produce both encodings" {
     const rows = try loadCorpus(arena.allocator(), PARSE);
     try assertRowCount(rows, 1061, PARSE);
     for (rows) |row| {
-        const bid = codec.bid128Parse(row.text) catch |e| {
-            std.debug.print("parse line {d}: bid rejected <{s}>: {s}\n", .{ row.line_number, row.text, @errorName(e) });
+        var bid: u128 = undefined;
+        if (codec.bid128Parse(&bid, row.text)) |e| {
+            std.debug.print("parse line {d}: bid rejected <{s}>: {s}\n", .{ row.line_number, row.text, e });
             return error.TestFailed;
-        };
+        }
         if (bid != row.bid) {
             std.debug.print("parse line {d}: bid <{s}> gave {X:0>32}, expected {X:0>32}\n", .{ row.line_number, row.text, bid, row.bid });
             return error.TestFailed;
         }
-        const dpd = codec.dpd128Parse(row.text) catch |e| {
-            std.debug.print("parse line {d}: dpd rejected <{s}>: {s}\n", .{ row.line_number, row.text, @errorName(e) });
+        var dpd: u128 = undefined;
+        if (codec.dpd128Parse(&dpd, row.text)) |e| {
+            std.debug.print("parse line {d}: dpd rejected <{s}>: {s}\n", .{ row.line_number, row.text, e });
             return error.TestFailed;
-        };
+        }
         if (dpd != row.dpd) {
             std.debug.print("parse line {d}: dpd <{s}> gave {X:0>32}, expected {X:0>32}\n", .{ row.line_number, row.text, dpd, row.dpd });
             return error.TestFailed;
@@ -84,26 +86,23 @@ test "parse vectors produce both encodings" {
     }
 }
 
-// T4: malformed input. Both formats must reject and must agree on the reason.
-//
-// The sibling ports assert a third thing here: that the failed parse left the
-// canonical positive quiet NaN in its out-parameter, which is why the corpus
-// carries that pattern in the bits columns of this table. This port returns an
-// error union, so there is no out-parameter to inspect and no stale value a
-// caller could read — the guarantee those ports assert at runtime is a
-// type-level property here. What the bits column still buys is the check below:
-// the corpus's failure pattern IS the `qnan` constant this module publishes for
-// callers who want the sibling behaviour explicitly. That validates the
-// constant against 173 engine-authored rows; it does not, and cannot, say
-// anything about the parse path.
+// T4: malformed input. Both formats must reject, must agree on the reason, and
+// must leave the canonical positive quiet NaN in the out-parameter — which is
+// why the corpus carries that pattern in the bits columns of this table. The
+// bits check runs against `row.bid` on both formats, exactly as the siblings
+// do, and the `qnan` constant is checked against the same column so that a
+// caller naming the constant and a caller reading a failed parse are known to
+// see one pattern.
 test "error vectors are rejected by both formats" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const rows = try loadCorpus(arena.allocator(), ERROR);
     try assertRowCount(rows, 173, ERROR);
     for (rows) |row| {
-        const bid_err: ?anyerror = if (codec.bid128Parse(row.text)) |_| null else |e| e;
-        const dpd_err: ?anyerror = if (codec.dpd128Parse(row.text)) |_| null else |e| e;
+        var bid: u128 = undefined;
+        var dpd: u128 = undefined;
+        const bid_err = codec.bid128Parse(&bid, row.text);
+        const dpd_err = codec.dpd128Parse(&dpd, row.text);
         if (bid_err == null) {
             std.debug.print("error line {d}: bid ACCEPTED <{s}>, corpus says {s}\n", .{ row.line_number, row.text, row.status });
             return error.TestFailed;
@@ -112,8 +111,16 @@ test "error vectors are rejected by both formats" {
             std.debug.print("error line {d}: dpd ACCEPTED <{s}>, corpus says {s}\n", .{ row.line_number, row.text, row.status });
             return error.TestFailed;
         }
-        if (bid_err.? != dpd_err.?) {
-            std.debug.print("error line {d}: the formats disagree on <{s}>: <{s}> vs <{s}>\n", .{ row.line_number, row.text, @errorName(bid_err.?), @errorName(dpd_err.?) });
+        if (!std.mem.eql(u8, bid_err.?, dpd_err.?)) {
+            std.debug.print("error line {d}: the formats disagree on <{s}>: <{s}> vs <{s}>\n", .{ row.line_number, row.text, bid_err.?, dpd_err.? });
+            return error.TestFailed;
+        }
+        if (bid != row.bid) {
+            std.debug.print("error line {d}: bid <{s}> left {X:0>32}, expected {X:0>32}\n", .{ row.line_number, row.text, bid, row.bid });
+            return error.TestFailed;
+        }
+        if (dpd != row.bid) {
+            std.debug.print("error line {d}: dpd <{s}> left {X:0>32}, expected {X:0>32}\n", .{ row.line_number, row.text, dpd, row.bid });
             return error.TestFailed;
         }
         if (codec.qnan != row.bid) {
@@ -195,18 +202,20 @@ fn runDecodeTable(rows: []const CorpusRow, label: []const u8) !void {
 /// Round-trippable rows: the text must encode back to the same bits.
 fn runEncodeTable(rows: []const CorpusRow, label: []const u8) !void {
     for (rows) |row| {
-        const bid = codec.bid128Parse(row.text) catch |e| {
-            std.debug.print("{s} line {d}: bid rejected <{s}>: {s}\n", .{ label, row.line_number, row.text, @errorName(e) });
+        var bid: u128 = undefined;
+        if (codec.bid128Parse(&bid, row.text)) |e| {
+            std.debug.print("{s} line {d}: bid rejected <{s}>: {s}\n", .{ label, row.line_number, row.text, e });
             return error.TestFailed;
-        };
+        }
         if (bid != row.bid) {
             std.debug.print("{s} line {d}: bid <{s}> gave {X:0>32}, expected {X:0>32}\n", .{ label, row.line_number, row.text, bid, row.bid });
             return error.TestFailed;
         }
-        const dpd = codec.dpd128Parse(row.text) catch |e| {
-            std.debug.print("{s} line {d}: dpd rejected <{s}>: {s}\n", .{ label, row.line_number, row.text, @errorName(e) });
+        var dpd: u128 = undefined;
+        if (codec.dpd128Parse(&dpd, row.text)) |e| {
+            std.debug.print("{s} line {d}: dpd rejected <{s}>: {s}\n", .{ label, row.line_number, row.text, e });
             return error.TestFailed;
-        };
+        }
         if (dpd != row.dpd) {
             std.debug.print("{s} line {d}: dpd <{s}> gave {X:0>32}, expected {X:0>32}\n", .{ label, row.line_number, row.text, dpd, row.dpd });
             return error.TestFailed;
