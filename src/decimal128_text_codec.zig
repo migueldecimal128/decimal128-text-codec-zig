@@ -1266,11 +1266,13 @@ fn roundAndFinalizeFinite(format_is_bid: bool, sign: bool, q_exp_in: i32, dw1_in
 // text -> bits
 // --------------------------------------------------------------------------
 
-// The parsers report failure as a human-readable message and success as
-// `null`. The exact wording is not part of the contract and may change between
-// versions. What is contractual is that the two formats reject the same inputs
-// with the same message, which is what lets the corpus assert one error column
-// against both.
+// The parsers report failure as the engine's ParseStatus name for that failure
+// and success as `null`. The nine names -- EMPTY_STRING, INVALID_FORMAT,
+// UNEXPECTED_CHAR, DOUBLE_DOT, NO_COEFFICIENT_DIGIT, NO_EXPONENT_DIGIT,
+// INVALID_UNDERSCORE_LOCATION, FAILURE_PARSING_INFINITY, FAILURE_PARSING_NAN --
+// are the status column of the shared corpus, and the conformance suite asserts
+// the returned message against it row by row, so they are part of the contract.
+// The two formats reject the same inputs with the same message.
 
 /// The code of the byte at `index`, or -1 past the end of the slice.
 ///
@@ -1343,20 +1345,20 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
             prev_was_digit = true;
             after_underscore = false;
         } else if (ch == '_') {
-            if (!prev_was_digit) return "invalid underscore location";
+            if (!prev_was_digit) return "INVALID_UNDERSCORE_LOCATION";
             prev_was_digit = false;
             after_underscore = true;
         } else { // '.'
-            if (after_underscore) return "invalid underscore location";
-            if (has_dot) return "double radix dot";
+            if (after_underscore) return "INVALID_UNDERSCORE_LOCATION";
+            if (has_dot) return "DOUBLE_DOT";
             has_dot = true;
             prev_was_digit = false;
         }
         ch = codeAt(bytes, pos);
         pos += 1;
     }
-    if (after_underscore) return "invalid underscore location";
-    if (!has_coefficient_digit) return "no coefficient digit";
+    if (after_underscore) return "INVALID_UNDERSCORE_LOCATION";
+    if (!has_coefficient_digit) return "NO_COEFFICIENT_DIGIT";
     // this path has at least one digit
     if (ch == 'E' or ch == 'e') {
         ch = codeAt(bytes, pos);
@@ -1372,7 +1374,7 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
         after_underscore = false;
         while (isDigit(ch) or ch == '_') {
             if (ch == '_') {
-                if (!prev_was_digit) return "invalid underscore location";
+                if (!prev_was_digit) return "INVALID_UNDERSCORE_LOCATION";
                 prev_was_digit = false;
                 after_underscore = true;
             } else {
@@ -1391,12 +1393,12 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
             ch = codeAt(bytes, pos);
             pos += 1;
         }
-        if (after_underscore) return "invalid underscore location";
-        if (!has_exp_digit) return "no exponent digit";
+        if (after_underscore) return "INVALID_UNDERSCORE_LOCATION";
+        if (!has_exp_digit) return "NO_EXPONENT_DIGIT";
         // clamp once after the loop
         if (exp_significant_digit_count > 4) exp = 9999;
     }
-    if (ch != -1) return "unexpected char";
+    if (ch != -1) return "UNEXPECTED_CHAR";
 
     var dw0 = accum19a;
     var dw1: u64 = 0;
@@ -1424,14 +1426,14 @@ fn parseInfinityText(out: *Words, sign: bool, ch_first: i32, bytes: []const u8, 
     for ("infinity") |target_code| {
         if ((ch | 0x20) != target_code) {
             if (ch == -1) break;
-            return "failure parsing Infinity";
+            return "FAILURE_PARSING_INFINITY";
         }
         ch_prev_code = ch | 0x20;
         ch = codeAt(bytes, pos);
         pos += 1;
     }
     if (ch != -1 or (ch_prev_code != 'f' and ch_prev_code != 'y')) {
-        return "failure parsing Infinity";
+        return "FAILURE_PARSING_INFINITY";
     }
     const s: u64 = if (sign) SIGN_BIT else 0;
     out.* = .{ .hi = INF_PATTERN_HI | s, .lo = 0 };
@@ -1463,7 +1465,7 @@ fn parseNanText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, byt
         pos += 1;
     }
     if (((ch | 0x20) != 'n') or ((codeAt(bytes, pos) | 0x20) != 'a') or ((codeAt(bytes, pos + 1) | 0x20) != 'n')) {
-        return "failure parsing NaN";
+        return "FAILURE_PARSING_NAN";
     }
     pos += 2;
 
@@ -1500,16 +1502,16 @@ fn parseNanText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, byt
             pos += 1;
         }
         if (accum_digit_count == 0) {
-            return if (has_paren) "failure parsing NaN" else "non-digit NaN payload character";
+            return if (has_paren) "FAILURE_PARSING_NAN" else "FAILURE_PARSING_NAN";
         }
         if (has_paren) {
             // the ')' must be present and must end the input
             if (ch != ')') {
-                return if (ch == -1) "failure parsing NaN" else "non-digit NaN payload character";
+                return if (ch == -1) "FAILURE_PARSING_NAN" else "FAILURE_PARSING_NAN";
             }
-            if (codeAt(bytes, pos) != -1) return "failure parsing NaN";
+            if (codeAt(bytes, pos) != -1) return "FAILURE_PARSING_NAN";
         } else if (ch != -1) {
-            return "non-digit NaN payload character";
+            return "FAILURE_PARSING_NAN";
         }
         if (accum_digit_count > 33) {
             payload_dw0 = 0;
@@ -1546,8 +1548,8 @@ fn encodeStringOrError(out: *Words, format_is_bid: bool, bytes: []const u8) ?[]c
     if (ch_lower == 'n' or ch_lower == 's' or ch_lower == 'q') {
         return parseNanText(out, format_is_bid, sign, ch, bytes, pos);
     }
-    if (ch_first == -1) return "empty string";
-    return "invalid format";
+    if (ch_first == -1) return "EMPTY_STRING";
+    return "INVALID_FORMAT";
 }
 
 // --------------------------------------------------------------------------
@@ -1634,8 +1636,9 @@ pub fn dpd128ToAscii(out: *[max_len]u8, bits: u128) []const u8 {
 /// Returns `null` on success, with the encoding written to `out`. On failure
 /// returns a human-readable message and writes the canonical positive quiet
 /// NaN, so a caller who ignores the return value still holds a legal
-/// IEEE 754-2019 datum rather than a stale one. The exact wording of the
-/// message is not part of the contract and may change between versions.
+/// IEEE 754-2019 datum rather than a stale one. The message is the engine's
+/// ParseStatus name for the failure, asserted against the shared corpus by the
+/// conformance suite, so it is part of the contract.
 ///
 /// Accepted input:
 ///
@@ -1681,8 +1684,9 @@ pub fn bid128Parse(out: *u128, text: []const u8) ?[]const u8 {
 /// Returns `null` on success, with the encoding written to `out`. On failure
 /// returns a human-readable message and writes the canonical positive quiet
 /// NaN, so a caller who ignores the return value still holds a legal
-/// IEEE 754-2019 datum rather than a stale one. The exact wording of the
-/// message is not part of the contract and may change between versions.
+/// IEEE 754-2019 datum rather than a stale one. The message is the engine's
+/// ParseStatus name for the failure, asserted against the shared corpus by the
+/// conformance suite, so it is part of the contract.
 ///
 /// Accepted input:
 ///

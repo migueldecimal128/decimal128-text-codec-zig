@@ -115,6 +115,10 @@ test "error vectors are rejected by both formats" {
             std.debug.print("error line {d}: the formats disagree on <{s}>: <{s}> vs <{s}>\n", .{ row.line_number, row.text, bid_err.?, dpd_err.? });
             return error.TestFailed;
         }
+        if (!std.mem.eql(u8, bid_err.?, row.status)) {
+            std.debug.print("error line {d}: <{s}> returned <{s}>, corpus says {s}\n", .{ row.line_number, row.text, bid_err.?, row.status });
+            return error.TestFailed;
+        }
         if (bid != row.bid) {
             std.debug.print("error line {d}: bid <{s}> left {X:0>32}, expected {X:0>32}\n", .{ row.line_number, row.text, bid, row.bid });
             return error.TestFailed;
