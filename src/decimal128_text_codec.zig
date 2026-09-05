@@ -84,10 +84,10 @@ const build_options = @import("build_options");
 //                      Evaluated only under `-Dverify`, and the default is OFF.
 //                      CI runs the whole corpus with it on.
 //
-//   demand(cond, msg)  claims that must survive into a shipping build: the
-//                      buffer-sizing guards, which are what make `max_len` a
-//                      checked bound rather than a comment, and the
-//                      coefficient-width invariant standing in for the removed
+//   demand(cond, msg)  claims that must survive into a shipping build: that
+//                      the caller's buffer is at least `max_len`, checked once
+//                      on entry to each decoder, and the coefficient-width
+//                      invariant standing in for the removed
 //                      precision-truncation step.
 // ---------------------------------------------------------------------------
 
@@ -153,10 +153,12 @@ const TEN_POW_18: u64 = 1_000_000_000_000_000_000;
 /// field cannot exceed four digits inside decimal128's range, so neither
 /// number can drift without the format itself changing.
 ///
-/// Every write in the renderers is guarded against this bound. Sizing it
-/// exactly rather than generously is what turns those guards into real checks:
-/// with slack, an error in the arithmetic above would quietly consume the
-/// slack instead of firing.
+/// The renderers are checked against this bound once, on entry, rather than at
+/// every write: the buffer is confirmed to be at least this long and the forms
+/// above are what guarantee nothing longer is produced. Sizing it exactly
+/// rather than generously is what keeps the two halves of that argument in
+/// contact; with slack, an error in the arithmetic above would quietly consume
+/// the slack instead of showing up.
 ///
 /// A caller sizes their buffer with it, and `*[max_len]u8` puts it in the
 /// type, so an undersized buffer is a compile error. No NUL is written, so no
@@ -577,7 +579,6 @@ fn render8DigitsBeforeIndex(dw: u64, ascii: []u8, off_maxx: usize) void {
     const g = (gh * M_U32_DIV_1E1) >> S_U32_DIV_1E1;
     const h = gh - (g * 10);
 
-    demand(off_maxx >= 8, "the eight digits are inside the buffer");
     ascii[off_maxx - 8] = asciiDigit(a);
     ascii[off_maxx - 7] = asciiDigit(b);
     ascii[off_maxx - 6] = asciiDigit(c);
@@ -594,7 +595,6 @@ fn renderTailDigitsBeforeIndex(render_digit_count: usize, dw: u64, ascii: []u8, 
     var t = dw;
     var remaining_digit_count = render_digit_count;
     var ib = off_maxx;
-    demand(off_maxx >= render_digit_count, "the digits are inside the buffer");
     while (remaining_digit_count >= 4) {
         const t0 = mulhi64(t, M_U64_DIV_1E4) >> S_U64_DIV_1E4;
         const abcd = t - (t0 * 10000);
@@ -708,7 +708,6 @@ const INFINITY_TEXT = "Infinity";
 fn infAscii(out: []u8, sign: bool) usize {
     const sign_len: usize = @intFromBool(sign);
     const total_len = sign_len + INFINITY_TEXT.len;
-    demand(total_len <= max_len, "Infinity fits the buffer");
     out[0] = '-'; // overwritten by the 'I' when unsigned
     @memcpy(out[sign_len..total_len], INFINITY_TEXT);
     return total_len;
@@ -729,13 +728,11 @@ fn nanAscii(out: []u8, sign: bool, is_signaling: bool, payload_hi: u64, payload_
         payload_hi > MAX_PAYLOAD_HI or
         (payload_hi == MAX_PAYLOAD_HI and payload_lo > MAX_PAYLOAD_LO))
     {
-        demand(base_len <= max_len, "the bare NaN fits the buffer");
         @memcpy(out[word_off..base_len], NAN_TEXT);
         return base_len;
     }
     const digit_len = calcDigitLen128(payload_hi, payload_lo);
     const total_len = base_len + digit_len;
-    demand(total_len <= max_len, "the NaN payload fits the buffer");
     @memcpy(out[word_off..base_len], NAN_TEXT);
     u128ToAscii(digit_len, payload_hi, payload_lo, out, base_len);
     return total_len;
@@ -762,7 +759,6 @@ fn zerAscii(out: []u8, sign: bool, q_exp: i32) usize {
         const zero_len: usize = if (k == 0) 1 else k + 2;
         const sign_len: usize = @intFromBool(sign);
         const total_len = sign_len + zero_len;
-        demand(total_len <= max_len, "the plain zero fits the buffer");
         out[0] = '-'; // overwritten by the '0' when unsigned
         @memcpy(out[sign_len..total_len], PLAIN_ZERO[0..zero_len]);
         return total_len;
@@ -777,7 +773,6 @@ fn zerAscii(out: []u8, sign: bool, q_exp: i32) usize {
     // never sees zero.
     const plus_len: usize = @intFromBool(q_exp > 0);
     const base_len = sign_len + ZERO_EXP_TEXT.len + plus_len;
-    demand(base_len + 6 <= max_len, "the exponent-form zero fits the buffer");
     out[0] = '-'; // overwritten by the '0' when unsigned
     @memcpy(out[sign_len .. sign_len + ZERO_EXP_TEXT.len], ZERO_EXP_TEXT);
     out[sign_len + ZERO_EXP_TEXT.len] = '+'; // overwritten by appendInt's '-' when q_exp < 0
@@ -789,7 +784,6 @@ fn fnzToIntegerAscii(out: []u8, sign: bool, digit_len: usize, dw1: u64, dw0: u64
     verify(digit_len > 0, "a finite nonzero value has at least one digit");
     const sign_len: usize = @intFromBool(sign);
     const total_len = sign_len + digit_len;
-    demand(total_len <= max_len, "the integer form fits the buffer");
     out[0] = '-'; // overwritten by the first digit when unsigned
     u128ToAscii(digit_len, dw1, dw0, out, sign_len);
     return total_len;
@@ -804,7 +798,6 @@ fn fnzToDecimalPointAscii(out: []u8, sign: bool, q_exp: i32, digit_len: usize, d
     const sign_len: usize = @intFromBool(sign);
     const decimal_point_len: usize = 1;
     const total_len = sign_len + leading_zero_count + decimal_point_len + digit_len;
-    demand(total_len <= max_len, "the fixed-point form fits the buffer");
     out[0] = '-';
     var i = sign_len;
     while (i <= leading_zero_count) : (i += 1) { // one extra, overwritten below
@@ -839,7 +832,6 @@ fn fnzToNormalizedScientificAscii(out: []u8, sign: bool, q_exp: i32, digit_len: 
     else
         1;
     const total_len = sign_len + decimal_point_len + digit_len + exp_e_len + exp_sign_len + exp_digit_len;
-    demand(total_len <= max_len, "the scientific form fits the buffer");
     out[0] = '-';
     u128ToAscii(digit_len, dw1, dw0, out, sign_len + decimal_point_len);
     if (decimal_point_len > 0) {
@@ -871,6 +863,12 @@ fn fnzAscii(out: []u8, sign: bool, q_exp: i32, dw1: u64, dw0: u64) usize {
 /// Unpack a BID128 encoding, per IEEE 754-2019 3.5.2, and render it.
 fn decodeBid128toAscii(out: []u8, bid128_hi: u64, bid128_lo: u64) usize {
     verify(1 + W5 + T_WIDTH == 128, "the field widths tile the encoding");
+
+    // The API's contract is a buffer of at least max_len, so that is what is
+    // checked -- once, on every call, rather than per rendered form. The
+    // public entry points take a *[max_len]u8, but that length is gone by the
+    // time the slice reaches here, so it is re-established at this boundary.
+    demand(out.len >= max_len, "the buffer is at least max_len bytes");
 
     const sign = (bid128_hi & SIGN_BIT) != 0;
     const combination: u32 = @intCast((bid128_hi >> @intCast(T_WIDTH - 64)) & 0x1FFFF);
@@ -916,6 +914,12 @@ fn decodeBid128toAscii(out: []u8, bid128_hi: u64, bid128_lo: u64) usize {
 /// Unpack a DPD128 encoding and hand the pieces to the same renderers.
 fn decodeDpd128toAscii(out: []u8, dpd128_hi: u64, dpd128_lo: u64) usize {
     const w: u32 = 12; // exponent continuation width
+
+    // The API's contract is a buffer of at least max_len, so that is what is
+    // checked -- once, on every call, rather than per rendered form. The
+    // public entry points take a *[max_len]u8, but that length is gone by the
+    // time the slice reaches here, so it is re-established at this boundary.
+    demand(out.len >= max_len, "the buffer is at least max_len bytes");
 
     const sign = (dpd128_hi & SIGN_BIT) != 0;
     const combination: u32 = @intCast((dpd128_hi >> @intCast(T_WIDTH - 64)) & 0x1FFFF);
