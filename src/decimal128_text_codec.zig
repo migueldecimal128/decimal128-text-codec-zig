@@ -1450,7 +1450,7 @@ fn parseInfinityText(out: *Words, sign: bool, ch_first: i32, bytes: []const u8, 
 /// be the last character of the input. So NaN(1)2(3), NaN(1, NaN(1] and NaN()
 /// are all rejected, and NaN[1] and NaN{1} are not this form at all.
 ///
-/// This spelling exists because C's own strtod reads
+/// This spelling exists because the platform's own strtod reads
 /// NAN(n-char-sequence), so the spelling reaches a caller from the platform
 /// itself. The resemblance stops at the parentheses: strtod's sequence is
 /// letters, digits and underscores read as an implementation-defined integer,

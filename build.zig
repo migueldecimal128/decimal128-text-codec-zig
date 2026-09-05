@@ -20,9 +20,9 @@ pub fn build(b: *std.Build) void {
     });
     mod.addOptions("build_options", build_options);
 
-    // The conformance suite is a SEPARATE module that imports the library, so it
-    // reaches only the public surface -- the black-box arrangement the Go and
-    // Rust ports get from an external test package and an integration test.
+    // The conformance suite is a SEPARATE module that imports the library, so
+    // it reaches only the public surface: the tests exercise the codec exactly
+    // as a consumer would, with no reach into its internals.
     const test_mod = b.createModule(.{
         .root_source_file = b.path("tests/corpus_vectors.zig"),
         .target = target,
