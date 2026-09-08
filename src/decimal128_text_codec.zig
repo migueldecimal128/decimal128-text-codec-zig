@@ -159,11 +159,11 @@ const QNAN_PATTERN_HI: u64 = 0x7C00_0000_0000_0000;
 ///
 /// The output is the GDAS `to-scientific-string` form: integer notation when
 /// the quantum exponent is zero (e.g. `"123"`), plain notation when the
-/// adjusted exponent is in the range -6 to 0 (e.g. `"123.45"`), normalized
-/// scientific notation otherwise (e.g. `"1.234E+5"`). The exponent sign is
-/// always written, as in `"6.02E+23"`. Cohort information is preserved:
-/// `"1.00"` and `"1.0"` are distinct outputs from distinct encodings of the
-/// same numerical value.
+/// quantum exponent is negative and the adjusted exponent is at least -6
+/// (e.g. `"123.45"`), normalized scientific notation otherwise (e.g.
+/// `"1.234E+5"`). The exponent sign is always written, as in `"6.02E+23"`.
+/// Cohort information is preserved: `"1.00"` and `"1.0"` are distinct
+/// outputs from distinct encodings of the same numerical value.
 ///
 /// Special values render as `"Infinity"`, `"-Infinity"`, `"NaN"` and `"sNaN"`,
 /// each with an optional sign and an optional payload suffix such as
@@ -191,11 +191,11 @@ pub fn bid128ToAscii(out: *[max_len]u8, bits: u128) []const u8 {
 ///
 /// The output is the GDAS `to-scientific-string` form: integer notation when
 /// the quantum exponent is zero (e.g. `"123"`), plain notation when the
-/// adjusted exponent is in the range -6 to 0 (e.g. `"123.45"`), normalized
-/// scientific notation otherwise (e.g. `"1.234E+5"`). The exponent sign is
-/// always written, as in `"6.02E+23"`. Cohort information is preserved:
-/// `"1.00"` and `"1.0"` are distinct outputs from distinct encodings of the
-/// same numerical value.
+/// quantum exponent is negative and the adjusted exponent is at least -6
+/// (e.g. `"123.45"`), normalized scientific notation otherwise (e.g.
+/// `"1.234E+5"`). The exponent sign is always written, as in `"6.02E+23"`.
+/// Cohort information is preserved: `"1.00"` and `"1.0"` are distinct
+/// outputs from distinct encodings of the same numerical value.
 ///
 /// Special values render as `"Infinity"`, `"-Infinity"`, `"NaN"` and `"sNaN"`,
 /// each with an optional sign and an optional payload suffix such as
