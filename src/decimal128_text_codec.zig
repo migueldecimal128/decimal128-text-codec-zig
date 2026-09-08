@@ -1676,11 +1676,7 @@ pub fn dpd128ToAscii(out: *[max_len]u8, bits: u128) []const u8 {
 /// format, and the canonical positive quiet NaN is the same bit pattern in
 /// both.
 pub fn bid128Parse(out: *u128, text: []const u8) ?[]const u8 {
-    var words: Words = .{ .hi = 0, .lo = 0 };
-    const error_text = encodeStringOrError(&words, true, text);
-    if (error_text != null) words = .{ .hi = QNAN_PATTERN_HI, .lo = 0 };
-    out.* = joinWords(words.hi, words.lo);
-    return error_text;
+    return parseInto(out, true, text);
 }
 
 /// Parse a decimal character sequence into a DPD128 encoding.
@@ -1724,8 +1720,17 @@ pub fn bid128Parse(out: *u128, text: []const u8) ?[]const u8 {
 /// format, and the canonical positive quiet NaN is the same bit pattern in
 /// both.
 pub fn dpd128Parse(out: *u128, text: []const u8) ?[]const u8 {
+    return parseInto(out, false, text);
+}
+
+/// `out` is written on both paths -- the encoding on success, the canonical
+/// positive quiet NaN on failure -- so the caller never reads back what was
+/// there before the call. That is why a failure is reported beside the value
+/// rather than in place of it: a caller who discards the message still holds a
+/// legal IEEE 754-2019 datum.
+fn parseInto(out: *u128, format_is_bid: bool, text: []const u8) ?[]const u8 {
     var words: Words = .{ .hi = 0, .lo = 0 };
-    const error_text = encodeStringOrError(&words, false, text);
+    const error_text = encodeStringOrError(&words, format_is_bid, text);
     if (error_text != null) words = .{ .hi = QNAN_PATTERN_HI, .lo = 0 };
     out.* = joinWords(words.hi, words.lo);
     return error_text;
