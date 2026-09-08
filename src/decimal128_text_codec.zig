@@ -1052,8 +1052,8 @@ fn fnzToNormalizedScientificAscii(out: []u8, sign: bool, q_exp: i32, digit_len: 
 }
 
 /// Finite non-zero: pick the form. Integer when the quantum exponent is zero,
-/// fixed-point when the adjusted exponent is at least -6, scientific
-/// otherwise -- the GDAS auto-select rule.
+/// fixed-point when it is negative and the adjusted exponent is at least -6,
+/// scientific otherwise -- the GDAS auto-select rule.
 fn fnzAscii(out: []u8, sign: bool, q_exp: i32, dw1: u64, dw0: u64) usize {
     const digit_len = calcDigitLen128(dw1, dw0);
     const e_exp = q_exp + (@as(i32, @intCast(digit_len)) - 1);

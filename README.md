@@ -69,8 +69,9 @@ direction — they arise from network and file data, which is why the codec
 handles them.
 
 **Output is the GDAS `to-scientific-string` form, and only that.** Integer form
-when the quantum exponent is zero, plain form when the adjusted exponent is in
-`[-6, 0]`, scientific otherwise. The exponent sign is always written:
+when the quantum exponent is zero, plain form when the quantum exponent is
+negative and the adjusted exponent is at least `-6`, scientific otherwise. The
+exponent sign is always written:
 `6.02E+23`, never `6.02E23`. Cohort information is preserved — `1.00` and `1.0`
 are distinct outputs from distinct encodings of the same numerical value, and
 nothing is ever normalized or stripped.
