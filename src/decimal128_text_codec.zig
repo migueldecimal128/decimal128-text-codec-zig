@@ -1712,12 +1712,12 @@ fn parseNanText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, byt
             pos += 1;
         }
         if (accum_digit_count == 0) {
-            return if (has_paren) "FAILURE_PARSING_NAN" else "FAILURE_PARSING_NAN";
+            return "FAILURE_PARSING_NAN";
         }
         if (has_paren) {
             // the ')' must be present and must end the input
             if (ch != ')') {
-                return if (ch == -1) "FAILURE_PARSING_NAN" else "FAILURE_PARSING_NAN";
+                return "FAILURE_PARSING_NAN";
             }
             if (codeAt(bytes, pos) != -1) return "FAILURE_PARSING_NAN";
         } else if (ch != -1) {
