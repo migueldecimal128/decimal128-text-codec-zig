@@ -930,13 +930,13 @@ fn u128ToAscii(digit_print_count: usize, dw1: u64, dw0: u64, ascii: []u8, off: u
 
 /// Write a signed decimal exponent at `off`, returning its length. The magnitude never exceeds
 /// 6176, so it is at most four digits.
-fn appendInt(out: []u8, v: i32) usize {
+fn appendInt(out: []u8, off: usize, v: i32) usize {
     // std.fmt.bufPrint returns an error union for a case that cannot arise here, and this is
     // the one site that needs it.
     var sign_len: usize = 0;
     var magnitude: i32 = v;
     if (v < 0) {
-        out[0] = '-';
+        out[off] = '-';
         sign_len = 1;
         magnitude = -v;
     }
@@ -950,7 +950,7 @@ fn appendInt(out: []u8, v: i32) usize {
     } else {
         digit_len = 1;
     }
-    renderTailDigitsBeforeIndex(digit_len, @intCast(magnitude), out, sign_len + digit_len);
+    renderTailDigitsBeforeIndex(digit_len, @intCast(magnitude), out, off + sign_len + digit_len);
     return sign_len + digit_len;
 }
 
@@ -1015,7 +1015,7 @@ fn zerAscii(out: []u8, sign: bool, q_exp: i32) usize {
     out[0] = '-'; // overwritten by the '0' when unsigned
     @memcpy(out[sign_len .. sign_len + ZERO_EXP_TEXT.len], ZERO_EXP_TEXT);
     out[sign_len + ZERO_EXP_TEXT.len] = '+'; // overwritten by appendInt's '-' when q_exp < 0
-    return base_len + appendInt(out[base_len..], q_exp);
+    return base_len + appendInt(out, base_len, q_exp);
 }
 
 /// Format a finite non-zero value with qExp == 0 as a plain integer sequence: no radix point,
