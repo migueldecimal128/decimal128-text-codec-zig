@@ -76,10 +76,10 @@ const build_options = @import("build_options");
 // Internal-state assertions
 //
 // Two mechanisms: one is a debugging aid, the other guards a write into a
-// caller's buffer. Both take the condition first and the message second, since
-// Zig has no trailing closure to hang a message-first form on.
+// caller's buffer. demand takes the condition first and the message second,
+// since Zig has no trailing closure to hang a message-first form on.
 //
-//   verify(condition, message)
+//   verify(condition)
 //                      internal-consistency claims -- unreachable for ANY
 //                      input, so a failure is a codec bug rather than bad data.
 //                      Evaluated only under `-Dverify`, and the default is OFF.
@@ -104,10 +104,10 @@ inline fn demand(condition: bool, message: []const u8) void {
     }
 }
 
-inline fn verify(condition: bool, message: []const u8) void {
+inline fn verify(condition: bool) void {
     if (build_options.verify) {
         if (!condition) {
-            impossible(message);
+            impossible("verify failed");
         }
     }
 }
@@ -553,8 +553,8 @@ fn u128FmaPow10(x: u64, pow10: usize, a: u64) struct { u64, u64 } {
 /// by `5^pow10` using two hardware 64-bit divides.
 fn u113DivModPow10Max9(dw_hi: u64, dw_lo: u64, pow10: usize) struct { u64, u64, u64 } {
     // Returns { quotient hi, quotient lo, remainder }.
-    verify(pow10 >= 1 and pow10 <= 9, "pow10 is in the kernel's 1..9 range");
-    verify(@clz(dw_hi) >= 15, "the dividend is at most 113 bits");
+    verify(pow10 >= 1 and pow10 <= 9);
+    verify(@clz(dw_hi) >= 15);
 
     const sh: u6 = @intCast(pow10);
     const mask = (@as(u64, 1) << sh) - 1;
@@ -629,11 +629,8 @@ fn residueFromValuePow10(dw1: u64, dw0: u64, pow10: usize) i32 {
 /// digits via `u113DivModPow10Max9`.
 fn u128ScaleDownPow10(dw1: u64, dw0: u64, truncation_needed: usize) struct { u64, u64, i32 } {
     // Returns { hi, lo, accumulated residue class }.
-    verify((dw1 | dw0) != 0, "the coefficient being scaled down is nonzero");
-    verify(
-        truncation_needed > 0 and truncation_needed < calcDigitLen128(dw1, dw0),
-        "the truncation keeps at least one digit",
-    );
+    verify((dw1 | dw0) != 0);
+    verify(truncation_needed > 0 and truncation_needed < calcDigitLen128(dw1, dw0));
     var scale_residue = EXACT;
     var dw1_t = dw1;
     var dw0_t = dw0;
@@ -670,7 +667,7 @@ fn u128ScaleDownPow10(dw1: u64, dw0: u64, truncation_needed: usize) struct { u64
 fn dpdDecodeDeclet(declet: u64) u64 {
     // A complement of t is spelled nt here throughout: on operands already reduced to 0 or 1 it
     // agrees with ~, and Zig's ~ would complement 63 bits that are then masked away.
-    verify(declet <= 1023, "the declet is 10 bits");
+    verify(declet <= 1023);
 
     if (declet == 0) {
         return 0;
@@ -720,7 +717,7 @@ fn dpdDecodeDeclet(declet: u64) u64 {
 /// re-encodes to the canonical declet for that value, so `encode(decode(x)) == x` only for
 /// canonical x.
 fn dpdEncodeDeclet(n: u64) u64 {
-    verify(n <= 999, "the value fits three decimal digits");
+    verify(n <= 999);
 
     if (n == 0) {
         return 0;
@@ -787,7 +784,7 @@ fn binFromDeclets(declets: u64) u64 {
 /// Encode a binary integer of at most 18 digits into six packed declets, least significant
 /// first. The inverse of `binFromDeclets` over that range.
 fn decletsFromBin(bin: u64) u64 {
-    verify(bin < TEN_POW_18, "the value fits eighteen decimal digits");
+    verify(bin < TEN_POW_18);
     var rest = bin;
     var declets: u64 = 0;
     var shift: u6 = 0;
@@ -884,7 +881,7 @@ fn renderTailDigitsBeforeIndex(render_digit_count: usize, dw: u64, ascii: []u8, 
         t = div_ten;
         remaining_digit_count -= 1;
     }
-    verify(off_maxx - ib == render_digit_count, "exactly renderDigitCount bytes were written");
+    verify(off_maxx - ib == render_digit_count);
 }
 
 /// Render a 128-bit unsigned integer as `digitPrintCount` decimal digits into `ascii`, ending
@@ -1024,7 +1021,7 @@ fn zerAscii(out: []u8, sign: bool, q_exp: i32) usize {
 /// Format a finite non-zero value with qExp == 0 as a plain integer sequence: no radix point,
 /// no exponent.
 fn fnzToIntegerAscii(out: []u8, sign: bool, digit_len: usize, dw1: u64, dw0: u64) usize {
-    verify(digit_len > 0, "a finite nonzero value has at least one digit");
+    verify(digit_len > 0);
     const sign_len: usize = @intFromBool(sign);
     const total_len = sign_len + digit_len;
     out[0] = '-'; // overwritten by the first digit when unsigned
@@ -1062,7 +1059,7 @@ fn fnzToDecimalPointAscii(out: []u8, sign: bool, q_exp: i32, digit_len: usize, d
 /// The sign is always written: + for non-negative exponents, - for negative, per the GDAS
 /// to-scientific-string form.
 fn fnzToNormalizedScientificAscii(out: []u8, sign: bool, q_exp: i32, digit_len: usize, dw1: u64, dw0: u64) usize {
-    verify(digit_len > 0, "a finite nonzero value has at least one digit");
+    verify(digit_len > 0);
     const e_exp = q_exp + (@as(i32, @intCast(digit_len)) - 1);
     const e_exp_abs: u32 = @abs(e_exp);
     const sign_len: usize = @intFromBool(sign);
@@ -1115,7 +1112,7 @@ fn fnzAscii(out: []u8, sign: bool, q_exp: i32, dw1: u64, dw0: u64) usize {
 /// section 3.5.2; the class it lands on -- Infinity, NaN (quiet or signaling, with optional
 /// payload), zero (canonical or non-canonical), or finite non-zero -- picks the leaf renderer.
 fn decodeBid128toAscii(out: []u8, bid128_hi: u64, bid128_lo: u64) usize {
-    verify(1 + W5 + T_WIDTH == 128, "the field widths tile the encoding");
+    verify(1 + W5 + T_WIDTH == 128);
 
     // The API's contract is a buffer of at least max_len, so that is what is
     // checked -- once, on every call, rather than per rendered form. The
@@ -1145,7 +1142,7 @@ fn decodeBid128toAscii(out: []u8, bid128_hi: u64, bid128_lo: u64) usize {
     } else if ((combination >> @intCast(W5 - 5)) == 0x1E) {
         return infAscii(out, sign);
     } else {
-        verify((combination >> @intCast(W5 - 5)) == 0x1F, "the remaining combination field is the NaN pattern");
+        verify((combination >> @intCast(W5 - 5)) == 0x1F);
         const is_signaling = ((combination >> @intCast(W5 - 6)) & 1) != 0;
         return nanAscii(out, sign, is_signaling, coeff_t_hi, bid128_lo);
     }
@@ -1199,7 +1196,7 @@ fn decodeDpd128toAscii(out: []u8, dpd128_hi: u64, dpd128_lo: u64) usize {
     } else if ((combination >> @intCast(W5 - 5)) == 0x1E) {
         return infAscii(out, sign);
     } else {
-        verify((combination >> @intCast(W5 - 5)) == 0x1F, "the remaining combination field is the NaN pattern");
+        verify((combination >> @intCast(W5 - 5)) == 0x1F);
         is_nan = true;
         is_signaling = ((combination >> @intCast(W5 - 6)) & 1) != 0;
         d0 = 0;
@@ -1248,8 +1245,8 @@ fn decodeDpd128toAscii(out: []u8, dpd128_hi: u64, dpd128_lo: u64) usize {
 /// for any canonical coefficient whose top 3 bits fit in 0..7. Preconditions: the exponent must
 /// be in [-6176, 6111] and the coefficient must have at most 34 decimal digits.
 fn bid128SetFinite(sign: bool, q_exp: i32, dw1: u64, dw0: u64) struct { u64, u64 } {
-    verify(q_exp >= Q_MIN and q_exp <= Q_MAX, "the quantum exponent is in range");
-    verify(calcDigitLen128(dw1, dw0) <= 34, "the coefficient is at most 34 digits");
+    verify(q_exp >= Q_MIN and q_exp <= Q_MAX);
+    verify(calcDigitLen128(dw1, dw0) <= 34);
     const q_biased: u64 = @intCast(q_exp + BIAS);
     const s: u64 = if (sign) SIGN_BIT else 0;
     const g = q_biased << (3 + 46);
@@ -1263,8 +1260,8 @@ fn bid128SetFinite(sign: bool, q_exp: i32, dw1: u64, dw0: u64) struct { u64, u64
 /// exponent's top two bits, so unlike BID there is no shared "pack sign and exponent" step to
 /// factor out.
 fn dpd128SetFinite(sign: bool, q_exp: i32, dw1: u64, dw0: u64) struct { u64, u64 } {
-    verify(q_exp >= Q_MIN and q_exp <= Q_MAX, "the quantum exponent is in range");
-    verify(calcDigitLen128(dw1, dw0) <= 34, "the coefficient is at most 34 digits");
+    verify(q_exp >= Q_MIN and q_exp <= Q_MAX);
+    verify(calcDigitLen128(dw1, dw0) <= 34);
 
     // Split the coefficient into its low 18 digits and its high 16. Two
     // divisions by 10^9 rather than one by 10^18, so the existing 128-bit kernel
@@ -1272,14 +1269,14 @@ fn dpd128SetFinite(sign: bool, q_exp: i32, dw1: u64, dw0: u64) struct { u64, u64
     const t1_hi, const t1_lo, const r1 = u113DivModPow10Max9(dw1, dw0, 9);
     const t2_hi, const t2_lo, const r2 = u113DivModPow10Max9(t1_hi, t1_lo, 9);
     const bin_lo = (r2 * 1_000_000_000) + r1;
-    verify(t2_hi == 0, "the high 16 digits fit in one word");
+    verify(t2_hi == 0);
     const bin_hi = t2_lo;
 
     // the top digit rides in the combination field; the other 15 are declets
     const d0 = bin_hi / TEN_POW_15;
     const declets5_hi = decletsFromBin(bin_hi - (d0 * TEN_POW_15));
     const declets6_lo = decletsFromBin(bin_lo);
-    verify(d0 <= 9, "the leading digit is a single digit");
+    verify(d0 <= 9);
 
     const biased_q_exp = q_exp + BIAS;
     const exp_msb: u64 = @intCast((biased_q_exp >> 12) & 0x3);
@@ -1314,12 +1311,12 @@ fn bid128SetNaN(sign: bool, is_signaling: bool, payload_dw1: u64, payload_dw0: u
 /// declets -- 33 digits, with no leading digit in the combination field, since G0..G4 are fixed
 /// at 11111 and G5 carries the signaling flag.
 fn dpd128SetNaN(sign: bool, is_signaling: bool, payload_dw1: u64, payload_dw0: u64) struct { u64, u64 } {
-    verify(calcDigitLen128(payload_dw1, payload_dw0) <= 33, "the payload is at most 33 digits");
+    verify(calcDigitLen128(payload_dw1, payload_dw0) <= 33);
 
     const t1_hi, const t1_lo, const r1 = u113DivModPow10Max9(payload_dw1, payload_dw0, 9);
     const t2_hi, const t2_lo, const r2 = u113DivModPow10Max9(t1_hi, t1_lo, 9);
     const bin_lo = (r2 * 1_000_000_000) + r1;
-    verify(t2_hi == 0, "a 33-digit payload leaves 15 digits up top");
+    verify(t2_hi == 0);
     const declets5_hi = decletsFromBin(t2_lo);
     const declets6_lo = decletsFromBin(bin_lo);
 
@@ -1372,10 +1369,7 @@ fn coeffQExpFit(dw1: u64, dw0: u64, q_exp: i32) bool {
 /// asserts the invariant and produces the clamped encoding.
 fn finalizeClamping(format_is_bid: bool, sign: bool, q_exp: i32, dw1: u64, dw0: u64) struct { u64, u64 } {
     const q_excess = q_exp - Q_MAX;
-    verify(
-        q_excess > 0 and @as(usize, @intCast(q_excess)) <= 34 - calcDigitLen128(dw1, dw0),
-        "the excess exponent fits the coefficient's spare digits",
-    );
+    verify(q_excess > 0 and @as(usize, @intCast(q_excess)) <= 34 - calcDigitLen128(dw1, dw0));
     const pow10_offset: usize = @as(usize, @intCast(q_excess)) << 1;
     const y1 = POW10[pow10_offset + 1];
     const y0 = POW10[pow10_offset];
@@ -1389,7 +1383,7 @@ fn finalizeClamping(format_is_bid: bool, sign: bool, q_exp: i32, dw1: u64, dw0: 
     const pp01_lo = dw0 *% y1;
     const dw0_scaled = pp00_lo;
     const dw1_scaled = pp00_hi +% pp10_lo +% pp01_lo;
-    verify(coeffQExpFit(dw1_scaled, dw0_scaled, Q_MAX), "the scaled coefficient is representable at Q_MAX");
+    verify(coeffQExpFit(dw1_scaled, dw0_scaled, Q_MAX));
     return setFinite(format_is_bid, sign, Q_MAX, dw1_scaled, dw0_scaled);
 }
 
@@ -1401,7 +1395,7 @@ fn finalizeClamping(format_is_bid: bool, sign: bool, q_exp: i32, dw1: u64, dw0: 
 /// residue is `GT_HALF`).
 fn finalizeUnderflowBoundary(format_is_bid: bool, sign: bool, dw1: u64, dw0: u64, residue_in: i32) struct { u64, u64 } {
     const digit_len = calcDigitLen128(dw1, dw0);
-    verify(digit_len != 0, "the boundary coefficient is nonzero");
+    verify(digit_len != 0);
     const scale_residue = residueFromValuePow10(dw1, dw0, digit_len);
     const total_residue = residueMerge(scale_residue, residue_in);
     const coeff: u64 = @intFromBool(total_residue == GT_HALF);
@@ -1412,10 +1406,7 @@ fn finalizeUnderflowBoundary(format_is_bid: bool, sign: bool, dw1: u64, dw0: u64
 /// survives, and round what is left.
 fn finalizeSubnormal(format_is_bid: bool, sign: bool, q_exp_in: i32, dw1_in: u64, dw0_in: u64, residue_in: i32) struct { u64, u64 } {
     const truncation_needed: usize = @intCast(Q_MIN - q_exp_in);
-    verify(
-        truncation_needed > 0 and truncation_needed < calcDigitLen128(dw1_in, dw0_in),
-        "the subnormal truncation keeps at least one digit",
-    );
+    verify(truncation_needed > 0 and truncation_needed < calcDigitLen128(dw1_in, dw0_in));
 
     const scaled_hi, const scaled_lo, const scale_residue = u128ScaleDownPow10(dw1_in, dw0_in, truncation_needed);
     var dw1_t = scaled_hi;
@@ -1450,10 +1441,10 @@ fn finalizeSubnormal(format_is_bid: bool, sign: bool, q_exp_in: i32, dw1_in: u64
 ///   preserved, with rounding.
 fn finalizeUnderflowRegion(format_is_bid: bool, sign: bool, q_exp: i32, dw1: u64, dw0: u64, residue: i32) struct { u64, u64 } {
     // IEEE 754-2019 7.5 Underflow -- the subnormal region
-    verify(q_exp < Q_MIN, "the exponent is below the minimum");
+    verify(q_exp < Q_MIN);
     const truncation_needed: usize = @intCast(Q_MIN - q_exp);
     const digit_len = calcDigitLen128(dw1, dw0);
-    verify(digit_len <= 34, "the coefficient is at most 34 digits");
+    verify(digit_len <= 34);
     if (truncation_needed > digit_len) {
         // below half the smallest subnormal: zero, and always inexact
         return roundAndFinalizeFinite(format_is_bid, sign, Q_MIN, 0, 0, LT_HALF);
@@ -1560,8 +1551,8 @@ fn roundAndFinalizeFinite(format_is_bid: bool, sign: bool, q_exp_in: i32, dw1_in
     }
 
     // Step 7
-    verify(q_exp >= Q_MIN, "the exponent is at or above the minimum");
-    verify(calcDigitLen128(dw1, dw0) <= 34, "the rounded coefficient is at most 34 digits");
+    verify(q_exp >= Q_MIN);
+    verify(calcDigitLen128(dw1, dw0) <= 34);
     if (q_exp > Q_MAX) {
         const q_excess: usize = @intCast(q_exp - Q_MAX);
         const digit_len = calcDigitLen128(dw1, dw0);
@@ -1628,7 +1619,7 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
     var prev_was_digit = false;
     var after_underscore = false;
 
-    verify(ch_first != -1, "the first character was already read");
+    verify(ch_first != -1);
     var ch = ch_first;
     var fractional_digit_count: usize = 0;
     var accum19a: u64 = 0;
