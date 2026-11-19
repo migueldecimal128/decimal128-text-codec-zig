@@ -499,19 +499,14 @@ inline fn mulhi64(x: u64, y: u64) u64 {
     return @truncate((@as(u128, x) * @as(u128, y)) >> 64);
 }
 
-/// Leading zero count, 64 for zero.
-inline fn clz64(v: u64) u32 {
-    return @clz(v);
-}
-
 /// Compute the bit-length of a 128-bit unsigned value: the position of the highest set bit,
 /// plus one. Returns 0 for the zero value.
 fn calcBitLen128(dw1: u64, dw0: u64) u32 {
     if (dw1 != 0) {
-        return 128 - clz64(dw1);
+        return 128 - @as(u32, @clz(dw1));
     }
     if (dw0 != 0) {
-        return 64 - clz64(dw0);
+        return 64 - @as(u32, @clz(dw0));
     }
     return 0;
 }
@@ -528,9 +523,9 @@ fn calcDigitLen128(dw1: u64, dw0: u64) usize {
     const p1 = POW10[pow10_offset + 1];
     const p0 = POW10[pow10_offset];
     if (dw1 != p1) {
-        return if (dw1 < p1) hi_digit_count - 1 else hi_digit_count;
+        return hi_digit_count - @intFromBool(dw1 < p1);
     }
-    return if (dw0 < p0) hi_digit_count - 1 else hi_digit_count;
+    return hi_digit_count - @intFromBool(dw0 < p0);
 }
 
 /// Multiply a 64-bit unsigned value `x` by `10^pow10` and add a 64-bit integer `a`, producing
@@ -559,7 +554,7 @@ fn u128FmaPow10(x: u64, pow10: usize, a: u64) struct { u64, u64 } {
 fn u113DivModPow10Max9(dw_hi: u64, dw_lo: u64, pow10: usize) struct { u64, u64, u64 } {
     // Returns { quotient hi, quotient lo, remainder }.
     verify(pow10 >= 1 and pow10 <= 9, "pow10 is in the kernel's 1..9 range");
-    verify(clz64(dw_hi) >= 15, "the dividend is at most 113 bits");
+    verify(@clz(dw_hi) >= 15, "the dividend is at most 113 bits");
 
     const sh: u6 = @intCast(pow10);
     const mask = (@as(u64, 1) << sh) - 1;
@@ -644,7 +639,7 @@ fn u128ScaleDownPow10(dw1: u64, dw0: u64, truncation_needed: usize) struct { u64
     var dw0_t = dw0;
     var digits_remaining = truncation_needed;
     while (digits_remaining > 0) {
-        const step_pow10 = if (digits_remaining < 9) digits_remaining else 9;
+        const step_pow10 = @min(digits_remaining, 9);
         const rem: u64 = blk: {
             const q_hi, const q_lo, const r = u113DivModPow10Max9(dw1_t, dw0_t, step_pow10);
             dw1_t = q_hi;
@@ -809,10 +804,6 @@ fn decletsFromBin(bin: u64) u64 {
 // Rendering integers into ASCII
 // ------------------------------------------------------------------
 
-inline fn asciiDigit(d: u64) u8 {
-    return '0' + @as(u8, @intCast(d));
-}
-
 /// Render exactly 8 decimal digits of `dw` into `ascii`, ending at `offMaxx`. Caller must
 /// ensure `dw < 10^8`; the function pads with leading zeros if `dw` has fewer than 8
 /// significant digits. Implemented as a binary cascade: / 10^4 once to split into two 4-digit
@@ -841,14 +832,15 @@ fn render8DigitsBeforeIndex(dw: u64, ascii: []u8, off_maxx: usize) void {
     const g = (gh * M_U32_DIV_1E1) >> S_U32_DIV_1E1;
     const h = gh - (g * 10);
 
-    ascii[off_maxx - 8] = asciiDigit(a);
-    ascii[off_maxx - 7] = asciiDigit(b);
-    ascii[off_maxx - 6] = asciiDigit(c);
-    ascii[off_maxx - 5] = asciiDigit(d);
-    ascii[off_maxx - 4] = asciiDigit(e);
-    ascii[off_maxx - 3] = asciiDigit(f);
-    ascii[off_maxx - 2] = asciiDigit(g);
-    ascii[off_maxx - 1] = asciiDigit(h);
+    demand(off_maxx >= 8 and off_maxx <= ascii.len, "render8DigitsBeforeIndex: offset out of range");
+    ascii[off_maxx - 8] = '0' + @as(u8, @intCast(a));
+    ascii[off_maxx - 7] = '0' + @as(u8, @intCast(b));
+    ascii[off_maxx - 6] = '0' + @as(u8, @intCast(c));
+    ascii[off_maxx - 5] = '0' + @as(u8, @intCast(d));
+    ascii[off_maxx - 4] = '0' + @as(u8, @intCast(e));
+    ascii[off_maxx - 3] = '0' + @as(u8, @intCast(f));
+    ascii[off_maxx - 2] = '0' + @as(u8, @intCast(g));
+    ascii[off_maxx - 1] = '0' + @as(u8, @intCast(h));
 }
 
 /// Render exactly `renderDigitCount` decimal digits of `dw` into `ascii`, ending at `offMaxx`.
@@ -876,10 +868,11 @@ fn renderTailDigitsBeforeIndex(render_digit_count: usize, dw: u64, ascii: []u8, 
         const b = ab - (a * 10);
         const c = (cd * M_U32_DIV_1E1) >> S_U32_DIV_1E1;
         const d = cd - (c * 10);
-        ascii[ib - 4] = asciiDigit(a);
-        ascii[ib - 3] = asciiDigit(b);
-        ascii[ib - 2] = asciiDigit(c);
-        ascii[ib - 1] = asciiDigit(d);
+        demand(ib >= 4 and ib <= ascii.len, "u128ToAscii: offset out of range");
+        ascii[ib - 4] = '0' + @as(u8, @intCast(a));
+        ascii[ib - 3] = '0' + @as(u8, @intCast(b));
+        ascii[ib - 2] = '0' + @as(u8, @intCast(c));
+        ascii[ib - 1] = '0' + @as(u8, @intCast(d));
         ib -= 4;
         remaining_digit_count -= 4;
     }
@@ -887,7 +880,7 @@ fn renderTailDigitsBeforeIndex(render_digit_count: usize, dw: u64, ascii: []u8, 
         const div_ten = (t * M_U32_DIV_1E1) >> S_U32_DIV_1E1;
         const digit = t - (div_ten * 10);
         ib -= 1;
-        ascii[ib] = asciiDigit(digit);
+        ascii[ib] = '0' + @as(u8, @intCast(digit));
         t = div_ten;
         remaining_digit_count -= 1;
     }
@@ -944,10 +937,11 @@ fn appendInt(out: []u8, v: i32) usize {
     // std.fmt.bufPrint returns an error union for a case that cannot arise here, and this is
     // the one site that needs it.
     var sign_len: usize = 0;
-    const magnitude: u32 = @abs(v);
+    var magnitude: i32 = v;
     if (v < 0) {
         out[0] = '-';
         sign_len = 1;
+        magnitude = -v;
     }
     var digit_len: usize = undefined;
     if (magnitude >= 1000) {
@@ -959,7 +953,7 @@ fn appendInt(out: []u8, v: i32) usize {
     } else {
         digit_len = 1;
     }
-    renderTailDigitsBeforeIndex(digit_len, magnitude, out, sign_len + digit_len);
+    renderTailDigitsBeforeIndex(digit_len, @intCast(magnitude), out, sign_len + digit_len);
     return sign_len + digit_len;
 }
 
@@ -1044,8 +1038,7 @@ fn fnzToIntegerAscii(out: []u8, sign: bool, digit_len: usize, dw1: u64, dw0: u64
 /// zeros are written directly into the buffer before the digits.
 fn fnzToDecimalPointAscii(out: []u8, sign: bool, q_exp: i32, digit_len: usize, dw1: u64, dw0: u64) usize {
     const digits_right_of_decimal: usize = @intCast(-q_exp);
-    const leading_zero_signed = 1 + @as(i32, @intCast(digits_right_of_decimal)) - @as(i32, @intCast(digit_len));
-    const leading_zero_count: usize = if (leading_zero_signed < 0) 0 else @intCast(leading_zero_signed);
+    const leading_zero_count: usize = @intCast(@max(1 + @as(i32, @intCast(digits_right_of_decimal)) - @as(i32, @intCast(digit_len)), 0));
     const sign_len: usize = @intFromBool(sign);
     const decimal_point_len: usize = 1;
     const total_len = sign_len + leading_zero_count + decimal_point_len + digit_len;
@@ -1313,10 +1306,7 @@ fn setFinite(format_is_bid: bool, sign: bool, q_exp: i32, dw1: u64, dw0: u64) st
 }
 
 fn bid128SetNaN(sign: bool, is_signaling: bool, payload_dw1: u64, payload_dw0: u64) struct { u64, u64 } {
-    var without_payload: u64 = if (is_signaling) SNAN_PATTERN_HI else QNAN_PATTERN_HI;
-    if (sign) {
-        without_payload |= SIGN_BIT;
-    }
+    const without_payload: u64 = (if (is_signaling) SNAN_PATTERN_HI else QNAN_PATTERN_HI) | (if (sign) SIGN_BIT else 0);
     return .{ without_payload | payload_dw1, payload_dw0 };
 }
 
@@ -1333,10 +1323,7 @@ fn dpd128SetNaN(sign: bool, is_signaling: bool, payload_dw1: u64, payload_dw0: u
     const declets5_hi = decletsFromBin(t2_lo);
     const declets6_lo = decletsFromBin(bin_lo);
 
-    var g_field: u64 = @as(u64, 0x1F) << 12;
-    if (is_signaling) {
-        g_field |= @as(u64, 1) << 11;
-    }
+    const g_field: u64 = (@as(u64, 0x1F) << 12) | (if (is_signaling) @as(u64, 1) << 11 else 0);
     const sign_combo = (@as(u64, @intFromBool(sign)) << 17) | g_field;
     return .{ (sign_combo << 46) | (declets5_hi >> 4), (declets5_hi << 60) | declets6_lo };
 }
@@ -1371,7 +1358,7 @@ fn coeffQExpFit(dw1: u64, dw0: u64, q_exp: i32) bool {
         return false;
     }
     // at most 113 bits is necessarily below 10^34, since 2^113 > 10^34
-    if (clz64(dw1) > 128 - 113) {
+    if (@clz(dw1) > 128 - 113) {
         return true;
     }
     return dw1 < MAXX_COEFF_34_HI or (dw1 == MAXX_COEFF_34_HI and dw0 < MAXX_COEFF_34_LO);
@@ -1759,7 +1746,7 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
     // precision limit pull the quantum exponent in opposite directions, so both
     // corrections land here.
     const signed_exp = if (exp_sign) -exp else exp;
-    const excess_digits = significant_digit_count -| 34;
+    const excess_digits = @max(significant_digit_count, 34) - 34;
     const q_exp = signed_exp - @as(i32, @intCast(fractional_digit_count)) + @as(i32, @intCast(excess_digits));
     const hi, const lo = roundAndFinalizeFinite(format_is_bid, sign, q_exp, dw1, dw0, residue);
     out.* = .{ .hi = hi, .lo = lo };
