@@ -79,12 +79,14 @@ const build_options = @import("build_options");
 // caller's buffer. Both take the condition first and the message second, since
 // Zig has no trailing closure to hang a message-first form on.
 //
-//   verify(cond, msg)  internal-consistency claims -- unreachable for ANY
+//   verify(condition, message)
+//                      internal-consistency claims -- unreachable for ANY
 //                      input, so a failure is a codec bug rather than bad data.
 //                      Evaluated only under `-Dverify`, and the default is OFF.
 //                      CI runs the whole corpus with it on.
 //
-//   demand(cond, msg)  claims that must survive into a shipping build: that
+//   demand(condition, message)
+//                      claims that must survive into a shipping build: that
 //                      the caller's buffer is at least `max_len`, checked once
 //                      on entry to each decoder, and the coefficient-width
 //                      invariant standing in for the removed
@@ -92,20 +94,20 @@ const build_options = @import("build_options");
 // ---------------------------------------------------------------------------
 
 /// Unconditional abort marking unreachable code.
-fn impossible(msg: []const u8) noreturn {
-    @panic(msg);
+fn impossible(message: []const u8) noreturn {
+    @panic(message);
 }
 
-inline fn demand(cond: bool, msg: []const u8) void {
-    if (!cond) {
-        impossible(msg);
+inline fn demand(condition: bool, message: []const u8) void {
+    if (!condition) {
+        impossible(message);
     }
 }
 
-inline fn verify(cond: bool, msg: []const u8) void {
+inline fn verify(condition: bool, message: []const u8) void {
     if (build_options.verify) {
-        if (!cond) {
-            impossible(msg);
+        if (!condition) {
+            impossible(message);
         }
     }
 }
@@ -260,8 +262,8 @@ pub fn dpd128ToAscii(out: *[max_len]u8, bits: u128) []const u8 {
 /// declets. The same text parses to peer encodings of the same value in either
 /// format, and the canonical positive quiet NaN is the same bit pattern in
 /// both.
-pub fn bid128Parse(out: *u128, text: []const u8) ?[]const u8 {
-    return parseInto(out, true, text);
+pub fn bid128Parse(out: *u128, str: []const u8) ?[]const u8 {
+    return parseInto(out, true, str);
 }
 
 /// Parse a decimal character sequence into a DPD128 encoding.
@@ -304,8 +306,8 @@ pub fn bid128Parse(out: *u128, text: []const u8) ?[]const u8 {
 /// declets. The same text parses to peer encodings of the same value in either
 /// format, and the canonical positive quiet NaN is the same bit pattern in
 /// both.
-pub fn dpd128Parse(out: *u128, text: []const u8) ?[]const u8 {
-    return parseInto(out, false, text);
+pub fn dpd128Parse(out: *u128, str: []const u8) ?[]const u8 {
+    return parseInto(out, false, str);
 }
 
 /// `out` is written on both paths -- the encoding on success, the canonical
@@ -313,9 +315,9 @@ pub fn dpd128Parse(out: *u128, text: []const u8) ?[]const u8 {
 /// there before the call. That is why a failure is reported beside the value
 /// rather than in place of it: a caller who discards the message still holds a
 /// legal IEEE 754-2019 datum.
-fn parseInto(out: *u128, format_is_bid: bool, text: []const u8) ?[]const u8 {
+fn parseInto(out: *u128, format_is_bid: bool, str: []const u8) ?[]const u8 {
     var words: Words = .{ .hi = 0, .lo = 0 };
-    const error_text = encodeStringOrError(&words, format_is_bid, text);
+    const error_text = encodeStringOrError(&words, format_is_bid, str);
     if (error_text != null) {
         words = .{ .hi = QNAN_PATTERN_HI, .lo = 0 };
     }
@@ -1534,8 +1536,8 @@ fn roundAndFinalizeFinite(format_is_bid: bool, sign: bool, q_exp_in: i32, dw1_in
 ///
 /// Zig has no increment operator, so the advance is its own line at each call
 /// rather than riding in the index.
-inline fn codeAt(bytes: []const u8, index: usize) i32 {
-    return if (index < bytes.len) bytes[index] else -1;
+inline fn codeAt(str: []const u8, index: usize) i32 {
+    return if (index < str.len) str[index] else -1;
 }
 
 /// `std.ascii.isDigit` takes a `u8`, and the reader yields an `i32`, so the
@@ -1555,7 +1557,7 @@ inline fn isDigit(ch: i32) bool {
 /// Leading zeros can be flushed branchlessly by coercing a comparison to an
 /// integer; the two counters below say the same thing with an `if`, since Zig
 /// has no implicit bool-to-integer conversion.
-fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, bytes: []const u8, start_pos: usize) ?[]const u8 {
+fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, str: []const u8, start_pos: usize) ?[]const u8 {
     var pos = start_pos;
     var residue = EXACT;
 
@@ -1613,7 +1615,7 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
             has_dot = true;
             prev_was_digit = false;
         }
-        ch = codeAt(bytes, pos);
+        ch = codeAt(str, pos);
         pos += 1;
     }
     if (after_underscore) {
@@ -1624,11 +1626,11 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
     }
     // this path has at least one digit
     if (ch == 'E' or ch == 'e') {
-        ch = codeAt(bytes, pos);
+        ch = codeAt(str, pos);
         pos += 1;
         if (ch == '+' or ch == '-') {
             exp_sign = (ch == '-');
-            ch = codeAt(bytes, pos);
+            ch = codeAt(str, pos);
             pos += 1;
         }
         var has_exp_digit = false;
@@ -1657,7 +1659,7 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
                 prev_was_digit = true;
                 after_underscore = false;
             }
-            ch = codeAt(bytes, pos);
+            ch = codeAt(str, pos);
             pos += 1;
         }
         if (after_underscore) {
@@ -1694,7 +1696,7 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
 }
 
 /// Parse Infinity, or its three-letter abbreviation Inf, case-insensitively.
-fn parseInfinityText(out: *Words, sign: bool, ch_first: i32, bytes: []const u8, start_pos: usize) ?[]const u8 {
+fn parseInfinityText(out: *Words, sign: bool, ch_first: i32, str: []const u8, start_pos: usize) ?[]const u8 {
     var pos = start_pos;
     var ch = ch_first;
     var ch_prev_code: i32 = 0;
@@ -1709,7 +1711,7 @@ fn parseInfinityText(out: *Words, sign: bool, ch_first: i32, bytes: []const u8, 
             return "FAILURE_PARSING_INFINITY";
         }
         ch_prev_code = ch | 0x20;
-        ch = codeAt(bytes, pos);
+        ch = codeAt(str, pos);
         pos += 1;
         i += 1;
     }
@@ -1736,27 +1738,27 @@ fn parseInfinityText(out: *Words, sign: bool, ch_first: i32, bytes: []const u8, 
 /// itself. The resemblance stops at the parentheses: strtod's sequence is
 /// letters, digits and underscores read as an implementation-defined integer,
 /// while a decimal128 payload is decimal digits.
-fn parseNanText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, bytes: []const u8, start_pos: usize) ?[]const u8 {
+fn parseNanText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, str: []const u8, start_pos: usize) ?[]const u8 {
     var pos = start_pos;
     var ch = ch_first;
     const has_s = (ch | 0x20) == 's';
     const has_q = (ch | 0x20) == 'q';
     if (has_q or has_s) {
-        ch = codeAt(bytes, pos);
+        ch = codeAt(str, pos);
         pos += 1;
     }
-    if (((ch | 0x20) != 'n') or ((codeAt(bytes, pos) | 0x20) != 'a') or ((codeAt(bytes, pos + 1) | 0x20) != 'n')) {
+    if (((ch | 0x20) != 'n') or ((codeAt(str, pos) | 0x20) != 'a') or ((codeAt(str, pos + 1) | 0x20) != 'n')) {
         return "FAILURE_PARSING_NAN";
     }
     pos += 2;
 
     var payload_dw0: u64 = 0;
     var payload_dw1: u64 = 0;
-    ch = codeAt(bytes, pos);
+    ch = codeAt(str, pos);
     pos += 1;
     const has_paren = ch == '(';
     if (has_paren) {
-        ch = codeAt(bytes, pos);
+        ch = codeAt(str, pos);
         pos += 1;
     }
     if (has_paren or ch != -1) {
@@ -1779,7 +1781,7 @@ fn parseNanText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, byt
             } else {
                 accum19b = (accum19b *% 10) +% d;
             }
-            ch = codeAt(bytes, pos);
+            ch = codeAt(str, pos);
             pos += 1;
         }
         if (accum_digit_count == 0) {
@@ -1790,7 +1792,7 @@ fn parseNanText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, byt
             if (ch != ')') {
                 return "FAILURE_PARSING_NAN";
             }
-            if (codeAt(bytes, pos) != -1) {
+            if (codeAt(str, pos) != -1) {
                 return "FAILURE_PARSING_NAN";
             }
         } else if (ch != -1) {
@@ -1813,25 +1815,25 @@ fn parseNanText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, byt
 }
 
 /// Read the optional sign, then dispatch on the leading character.
-fn encodeStringOrError(out: *Words, format_is_bid: bool, bytes: []const u8) ?[]const u8 {
+fn encodeStringOrError(out: *Words, format_is_bid: bool, str: []const u8) ?[]const u8 {
     var pos: usize = 0;
-    const ch_first = codeAt(bytes, pos);
+    const ch_first = codeAt(str, pos);
     pos += 1;
     var ch = ch_first;
     const sign = ch == '-';
     if (ch == '+' or ch == '-') {
-        ch = codeAt(bytes, pos);
+        ch = codeAt(str, pos);
         pos += 1;
     }
     if (isDigit(ch) or ch == '.') {
-        return parseFiniteValueText(out, format_is_bid, sign, ch, bytes, pos);
+        return parseFiniteValueText(out, format_is_bid, sign, ch, str, pos);
     }
     const ch_lower = ch | 0x20;
     if (ch_lower == 'i') {
-        return parseInfinityText(out, sign, ch, bytes, pos);
+        return parseInfinityText(out, sign, ch, str, pos);
     }
     if (ch_lower == 'n' or ch_lower == 's' or ch_lower == 'q') {
-        return parseNanText(out, format_is_bid, sign, ch, bytes, pos);
+        return parseNanText(out, format_is_bid, sign, ch, str, pos);
     }
     if (ch_first == -1) {
         return "EMPTY_STRING";
