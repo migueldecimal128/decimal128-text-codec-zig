@@ -97,12 +97,16 @@ fn impossible(msg: []const u8) noreturn {
 }
 
 inline fn demand(cond: bool, msg: []const u8) void {
-    if (!cond) impossible(msg);
+    if (!cond) {
+        impossible(msg);
+    }
 }
 
 inline fn verify(cond: bool, msg: []const u8) void {
     if (build_options.verify) {
-        if (!cond) impossible(msg);
+        if (!cond) {
+            impossible(msg);
+        }
     }
 }
 
@@ -312,7 +316,9 @@ pub fn dpd128Parse(out: *u128, text: []const u8) ?[]const u8 {
 fn parseInto(out: *u128, format_is_bid: bool, text: []const u8) ?[]const u8 {
     var words: Words = .{ .hi = 0, .lo = 0 };
     const error_text = encodeStringOrError(&words, format_is_bid, text);
-    if (error_text != null) words = .{ .hi = QNAN_PATTERN_HI, .lo = 0 };
+    if (error_text != null) {
+        words = .{ .hi = QNAN_PATTERN_HI, .lo = 0 };
+    }
     out.* = joinWords(words.hi, words.lo);
     return error_text;
 }
@@ -504,8 +510,12 @@ inline fn clz64(v: u64) u32 {
 
 /// Bit length of a 128-bit value: highest set bit plus one, 0 for zero.
 fn calcBitLen128(dw1: u64, dw0: u64) u32 {
-    if (dw1 != 0) return 128 - clz64(dw1);
-    if (dw0 != 0) return 64 - clz64(dw0);
+    if (dw1 != 0) {
+        return 128 - clz64(dw1);
+    }
+    if (dw0 != 0) {
+        return 64 - clz64(dw0);
+    }
     return 0;
 }
 
@@ -521,7 +531,9 @@ fn calcDigitLen128(dw1: u64, dw0: u64) usize {
     const pow10_offset = lo_digit_count << 1;
     const p1 = POW10[pow10_offset + 1];
     const p0 = POW10[pow10_offset];
-    if (dw1 != p1) return if (dw1 < p1) hi_digit_count - 1 else hi_digit_count;
+    if (dw1 != p1) {
+        return if (dw1 < p1) hi_digit_count - 1 else hi_digit_count;
+    }
     return if (dw0 < p0) hi_digit_count - 1 else hi_digit_count;
 }
 
@@ -595,15 +607,21 @@ fn residueMerge(round_residue: i32, sticky_residue: i32) i32 {
 
 /// Classify a 128-bit value relative to half of 10^pow10.
 fn residueFromValuePow10(dw1: u64, dw0: u64, pow10: usize) i32 {
-    if ((dw1 | dw0) == 0) return EXACT;
+    if ((dw1 | dw0) == 0) {
+        return EXACT;
+    }
     const pow10_index = pow10 << 1;
     const pow10_hi = POW10[pow10_index + 1];
     const pow10_lo = POW10[pow10_index];
 
     const half_hi = pow10_hi >> 1;
     const half_lo = (pow10_hi << 63) | (pow10_lo >> 1);
-    if (dw1 != half_hi) return if (dw1 < half_hi) LT_HALF else GT_HALF;
-    if (dw0 != half_lo) return if (dw0 < half_lo) LT_HALF else GT_HALF;
+    if (dw1 != half_hi) {
+        return if (dw1 < half_hi) LT_HALF else GT_HALF;
+    }
+    if (dw0 != half_lo) {
+        return if (dw0 < half_lo) LT_HALF else GT_HALF;
+    }
     return TIE_HALF;
 }
 
@@ -619,7 +637,7 @@ fn u128ScaleDownPow10(dw1: u64, dw0: u64, truncation_needed: usize) struct { u64
     var dw1_t = dw1;
     var dw0_t = dw0;
     var digits_remaining = truncation_needed;
-    while (true) {
+    while (digits_remaining > 0) {
         const step_pow10 = if (digits_remaining < 9) digits_remaining else 9;
         const rem: u64 = blk: {
             const q_hi, const q_lo, const r = u113DivModPow10Max9(dw1_t, dw0_t, step_pow10);
@@ -630,7 +648,6 @@ fn u128ScaleDownPow10(dw1: u64, dw0: u64, truncation_needed: usize) struct { u64
         const step_residue = residueFromValuePow10(0, rem, step_pow10);
         scale_residue = residueMerge(step_residue, scale_residue);
         digits_remaining -= step_pow10;
-        if (digits_remaining == 0) break;
     }
     return .{ dw1_t, dw0_t, scale_residue };
 }
@@ -655,7 +672,9 @@ fn u128ScaleDownPow10(dw1: u64, dw0: u64, truncation_needed: usize) struct { u64
 fn dpdDecodeDeclet(declet: u64) u64 {
     verify(declet <= 1023, "the declet is 10 bits");
 
-    if (declet == 0) return 0;
+    if (declet == 0) {
+        return 0;
+    }
 
     const p = (declet >> 9) & 1;
     const q = (declet >> 8) & 1;
@@ -701,7 +720,9 @@ fn dpdDecodeDeclet(declet: u64) u64 {
 fn dpdEncodeDeclet(n: u64) u64 {
     verify(n <= 999, "the value fits three decimal digits");
 
-    if (n == 0) return 0;
+    if (n == 0) {
+        return 0;
+    }
 
     const q10 = (n * 205) >> 11; // n / 10, exact for n <= 999
     const q100 = (n * 41) >> 12; // n / 100, exact for n <= 999
@@ -899,26 +920,24 @@ fn u128ToAscii(digit_print_count: usize, dw1: u64, dw0: u64, ascii: []u8, off: u
 /// std.fmt.bufPrint returns an error union for a case that cannot arise here,
 /// and this is the one site that needs it.
 fn appendInt(out: []u8, v: i32) usize {
-    var tmp: [12]u8 = undefined;
-    var n: usize = 0;
-    var len: usize = 0;
-    var magnitude: u32 = @abs(v);
+    var sign_len: usize = 0;
+    const magnitude: u32 = @abs(v);
     if (v < 0) {
-        out[len] = '-';
-        len += 1;
+        out[0] = '-';
+        sign_len = 1;
     }
-    while (true) {
-        tmp[n] = '0' + @as(u8, @intCast(magnitude % 10));
-        n += 1;
-        magnitude /= 10;
-        if (magnitude == 0) break;
+    var digit_len: usize = undefined;
+    if (magnitude >= 1000) {
+        digit_len = 4;
+    } else if (magnitude >= 100) {
+        digit_len = 3;
+    } else if (magnitude >= 10) {
+        digit_len = 2;
+    } else {
+        digit_len = 1;
     }
-    while (n > 0) {
-        n -= 1;
-        out[len] = tmp[n];
-        len += 1;
-    }
-    return len;
+    renderTailDigitsBeforeIndex(digit_len, magnitude, out, sign_len + digit_len);
+    return sign_len + digit_len;
 }
 
 // --------------------------------------------------------------------------
@@ -1057,8 +1076,12 @@ fn fnzToNormalizedScientificAscii(out: []u8, sign: bool, q_exp: i32, digit_len: 
 fn fnzAscii(out: []u8, sign: bool, q_exp: i32, dw1: u64, dw0: u64) usize {
     const digit_len = calcDigitLen128(dw1, dw0);
     const e_exp = q_exp + (@as(i32, @intCast(digit_len)) - 1);
-    if (q_exp == 0) return fnzToIntegerAscii(out, sign, digit_len, dw1, dw0);
-    if (q_exp <= 0 and e_exp >= -6) return fnzToDecimalPointAscii(out, sign, q_exp, digit_len, dw1, dw0);
+    if (q_exp == 0) {
+        return fnzToIntegerAscii(out, sign, digit_len, dw1, dw0);
+    }
+    if (q_exp <= 0 and e_exp >= -6) {
+        return fnzToDecimalPointAscii(out, sign, q_exp, digit_len, dw1, dw0);
+    }
     return fnzToNormalizedScientificAscii(out, sign, q_exp, digit_len, dw1, dw0);
 }
 
@@ -1178,8 +1201,12 @@ fn decodeDpd128toAscii(out: []u8, dpd128_hi: u64, dpd128_lo: u64) usize {
         dw0 = sum_lo;
     }
 
-    if (is_nan) return nanAscii(out, sign, is_signaling, dw1, dw0);
-    if ((dw1 | dw0) == 0) return zerAscii(out, sign, q_exp);
+    if (is_nan) {
+        return nanAscii(out, sign, is_signaling, dw1, dw0);
+    }
+    if ((dw1 | dw0) == 0) {
+        return zerAscii(out, sign, q_exp);
+    }
     return fnzAscii(out, sign, q_exp, dw1, dw0);
 }
 
@@ -1247,7 +1274,9 @@ fn setFinite(format_is_bid: bool, sign: bool, q_exp: i32, dw1: u64, dw0: u64) st
 
 fn bid128SetNaN(sign: bool, is_signaling: bool, payload_dw1: u64, payload_dw0: u64) struct { u64, u64 } {
     var without_payload: u64 = if (is_signaling) SNAN_PATTERN_HI else QNAN_PATTERN_HI;
-    if (sign) without_payload |= SIGN_BIT;
+    if (sign) {
+        without_payload |= SIGN_BIT;
+    }
     return .{ without_payload | payload_dw1, payload_dw0 };
 }
 
@@ -1265,7 +1294,9 @@ fn dpd128SetNaN(sign: bool, is_signaling: bool, payload_dw1: u64, payload_dw0: u
     const declets6_lo = decletsFromBin(bin_lo);
 
     var g_field: u64 = @as(u64, 0x1F) << 12;
-    if (is_signaling) g_field |= @as(u64, 1) << 11;
+    if (is_signaling) {
+        g_field |= @as(u64, 1) << 11;
+    }
     const sign_combo = (@as(u64, @intFromBool(sign)) << 17) | g_field;
     return .{ (sign_combo << 46) | (declets5_hi >> 4), (declets5_hi << 60) | declets6_lo };
 }
@@ -1288,9 +1319,13 @@ fn finalizeOverflow(sign: bool) struct { u64, u64 } {
 
 /// Does this coefficient/exponent pair fit as a canonical encoding?
 fn coeffQExpFit(dw1: u64, dw0: u64, q_exp: i32) bool {
-    if (q_exp < Q_MIN or q_exp > Q_MAX) return false;
+    if (q_exp < Q_MIN or q_exp > Q_MAX) {
+        return false;
+    }
     // at most 113 bits is necessarily below 10^34, since 2^113 > 10^34
-    if (clz64(dw1) > 128 - 113) return true;
+    if (clz64(dw1) > 128 - 113) {
+        return true;
+    }
     return dw1 < MAXX_COEFF_34_HI or (dw1 == MAXX_COEFF_34_HI and dw0 < MAXX_COEFF_34_LO);
 }
 
@@ -1353,7 +1388,9 @@ fn finalizeSubnormal(format_is_bid: bool, sign: bool, q_exp_in: i32, dw1_in: u64
         // The increment carries out of the low word only when it is all ones,
         // which is let wrap to zero and caught with the test below.
         dw0_t +%= 1;
-        if (dw0_t == 0) dw1_t += 1;
+        if (dw0_t == 0) {
+            dw1_t += 1;
+        }
         if (dw1_t == MAXX_COEFF_34_HI and dw0_t == MAXX_COEFF_34_LO) {
             dw1_t = MIN_PRECISION_34_COEFF_HI;
             dw0_t = MIN_PRECISION_34_COEFF_LO;
@@ -1450,7 +1487,9 @@ fn roundAndFinalizeFinite(format_is_bid: bool, sign: bool, q_exp_in: i32, dw1_in
         // As in finalizeSubnormal: the low word wraps to zero exactly when it
         // was all ones, and the carry is taken from that.
         dw0 +%= 1;
-        if (dw0 == 0) dw1 += 1;
+        if (dw0 == 0) {
+            dw1 += 1;
+        }
         if (dw1 == MAXX_COEFF_34_HI and dw0 == MAXX_COEFF_34_LO) {
             dw1 = MIN_PRECISION_34_COEFF_HI;
             dw0 = MIN_PRECISION_34_COEFF_LO;
@@ -1541,7 +1580,9 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
             const d: u8 = @intCast(ch - '0');
             has_coefficient_digit = true;
             // count while flushing leading zeros
-            if (significant_digit_count != 0 or d != 0) significant_digit_count += 1;
+            if (significant_digit_count != 0 or d != 0) {
+                significant_digit_count += 1;
+            }
             if (significant_digit_count <= 19) {
                 accum19a = (accum19a * 10) + d;
             } else if (significant_digit_count <= 34) {
@@ -1551,24 +1592,36 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
             } else {
                 residue = residueMerge(residue, residueFromDecimalDigit(d));
             }
-            if (has_dot) fractional_digit_count += 1;
+            if (has_dot) {
+                fractional_digit_count += 1;
+            }
             prev_was_digit = true;
             after_underscore = false;
         } else if (ch == '_') {
-            if (!prev_was_digit) return "INVALID_UNDERSCORE_LOCATION";
+            if (!prev_was_digit) {
+                return "INVALID_UNDERSCORE_LOCATION";
+            }
             prev_was_digit = false;
             after_underscore = true;
         } else { // '.'
-            if (after_underscore) return "INVALID_UNDERSCORE_LOCATION";
-            if (has_dot) return "DOUBLE_DOT";
+            if (after_underscore) {
+                return "INVALID_UNDERSCORE_LOCATION";
+            }
+            if (has_dot) {
+                return "DOUBLE_DOT";
+            }
             has_dot = true;
             prev_was_digit = false;
         }
         ch = codeAt(bytes, pos);
         pos += 1;
     }
-    if (after_underscore) return "INVALID_UNDERSCORE_LOCATION";
-    if (!has_coefficient_digit) return "NO_COEFFICIENT_DIGIT";
+    if (after_underscore) {
+        return "INVALID_UNDERSCORE_LOCATION";
+    }
+    if (!has_coefficient_digit) {
+        return "NO_COEFFICIENT_DIGIT";
+    }
     // this path has at least one digit
     if (ch == 'E' or ch == 'e') {
         ch = codeAt(bytes, pos);
@@ -1584,14 +1637,18 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
         after_underscore = false;
         while (isDigit(ch) or ch == '_') {
             if (ch == '_') {
-                if (!prev_was_digit) return "INVALID_UNDERSCORE_LOCATION";
+                if (!prev_was_digit) {
+                    return "INVALID_UNDERSCORE_LOCATION";
+                }
                 prev_was_digit = false;
                 after_underscore = true;
             } else {
                 has_exp_digit = true;
                 const e_digit: i32 = ch - '0';
                 // count while flushing leading zeros
-                if (exp_significant_digit_count != 0 or e_digit != 0) exp_significant_digit_count += 1;
+                if (exp_significant_digit_count != 0 or e_digit != 0) {
+                    exp_significant_digit_count += 1;
+                }
                 // A long exponent field runs this past the width of an i32; the
                 // reference wraps here and so does this, because the value is
                 // thrown away by the clamp below the moment the field is more
@@ -1603,12 +1660,20 @@ fn parseFiniteValueText(out: *Words, format_is_bid: bool, sign: bool, ch_first: 
             ch = codeAt(bytes, pos);
             pos += 1;
         }
-        if (after_underscore) return "INVALID_UNDERSCORE_LOCATION";
-        if (!has_exp_digit) return "NO_EXPONENT_DIGIT";
+        if (after_underscore) {
+            return "INVALID_UNDERSCORE_LOCATION";
+        }
+        if (!has_exp_digit) {
+            return "NO_EXPONENT_DIGIT";
+        }
         // clamp once after the loop
-        if (exp_significant_digit_count > 4) exp = 9999;
+        if (exp_significant_digit_count > 4) {
+            exp = 9999;
+        }
     }
-    if (ch != -1) return "UNEXPECTED_CHAR";
+    if (ch != -1) {
+        return "UNEXPECTED_CHAR";
+    }
 
     var dw0 = accum19a;
     var dw1: u64 = 0;
@@ -1633,14 +1698,20 @@ fn parseInfinityText(out: *Words, sign: bool, ch_first: i32, bytes: []const u8, 
     var pos = start_pos;
     var ch = ch_first;
     var ch_prev_code: i32 = 0;
-    for ("infinity") |target_code| {
+    const target = "infinity";
+    var i: usize = 0;
+    while (i < 8) {
+        const target_code = target[i];
         if ((ch | 0x20) != target_code) {
-            if (ch == -1) break;
+            if (ch == -1) {
+                break;
+            }
             return "FAILURE_PARSING_INFINITY";
         }
         ch_prev_code = ch | 0x20;
         ch = codeAt(bytes, pos);
         pos += 1;
+        i += 1;
     }
     if (ch != -1 or (ch_prev_code != 'f' and ch_prev_code != 'y')) {
         return "FAILURE_PARSING_INFINITY";
@@ -1719,7 +1790,9 @@ fn parseNanText(out: *Words, format_is_bid: bool, sign: bool, ch_first: i32, byt
             if (ch != ')') {
                 return "FAILURE_PARSING_NAN";
             }
-            if (codeAt(bytes, pos) != -1) return "FAILURE_PARSING_NAN";
+            if (codeAt(bytes, pos) != -1) {
+                return "FAILURE_PARSING_NAN";
+            }
         } else if (ch != -1) {
             return "FAILURE_PARSING_NAN";
         }
@@ -1754,10 +1827,14 @@ fn encodeStringOrError(out: *Words, format_is_bid: bool, bytes: []const u8) ?[]c
         return parseFiniteValueText(out, format_is_bid, sign, ch, bytes, pos);
     }
     const ch_lower = ch | 0x20;
-    if (ch_lower == 'i') return parseInfinityText(out, sign, ch, bytes, pos);
+    if (ch_lower == 'i') {
+        return parseInfinityText(out, sign, ch, bytes, pos);
+    }
     if (ch_lower == 'n' or ch_lower == 's' or ch_lower == 'q') {
         return parseNanText(out, format_is_bid, sign, ch, bytes, pos);
     }
-    if (ch_first == -1) return "EMPTY_STRING";
+    if (ch_first == -1) {
+        return "EMPTY_STRING";
+    }
     return "INVALID_FORMAT";
 }
