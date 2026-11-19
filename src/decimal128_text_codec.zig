@@ -1061,7 +1061,7 @@ fn fnzToDecimalPointAscii(out: []u8, sign: bool, q_exp: i32, digit_len: usize, d
 fn fnzToNormalizedScientificAscii(out: []u8, sign: bool, q_exp: i32, digit_len: usize, dw1: u64, dw0: u64) usize {
     verify(digit_len > 0);
     const e_exp = q_exp + (@as(i32, @intCast(digit_len)) - 1);
-    const e_exp_abs: u32 = @abs(e_exp);
+    const e_exp_abs: u32 = @intCast(if (e_exp < 0) -e_exp else e_exp);
     const sign_len: usize = @intFromBool(sign);
     const decimal_point_len: usize = @intFromBool(digit_len > 1);
     const exp_e_len: usize = 1;
